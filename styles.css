@@ -1,0 +1,79 @@
+.flex-cards {
+  --fc-width: 300px;
+  --fc-lines: 4;
+  --fc-max-height: none;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--size-4-3);
+}
+
+.flex-cards-group {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  padding: var(--size-4-3) 0 var(--size-4-1);
+}
+
+.flex-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--fc-width), 1fr));
+  gap: var(--size-4-2);
+  align-items: start;
+}
+
+/* Masonry via CSS columns: each card keeps its natural height and the columns stay balanced. Cards must not break across a column. */
+.flex-cards.is-masonry .flex-cards-grid {
+  display: block;
+  columns: var(--fc-width);
+  column-gap: var(--size-4-2);
+}
+
+.flex-cards.is-masonry .flex-cards-card {
+  break-inside: avoid;
+  margin-bottom: var(--size-4-2);
+}
+
+.flex-cards-card {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: var(--size-4-3);
+  max-height: var(--fc-max-height);
+  overflow-y: auto;
+}
+
+.flex-cards-title {
+  font-weight: var(--font-semibold);
+  line-height: var(--line-height-tight);
+  margin-bottom: var(--size-4-2);
+}
+
+.flex-cards-property + .flex-cards-property {
+  margin-top: var(--size-4-2);
+}
+
+.flex-cards-label {
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.flex-cards-value {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  line-height: var(--line-height-tight);
+}
+
+/* The whole point: clamp to a per-property line count instead of one shared line. Unset --fc-lines on a property to let it run to full length. */
+.flex-cards-title,
+.flex-cards-value {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--fc-lines);
+  overflow: hidden;
+}
+
+.flex-cards-sentinel {
+  height: 1px;
+}
