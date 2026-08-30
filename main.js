@@ -53,6 +53,7 @@ class FlexCardsView extends obsidian.BasesView {
 		const props = order.filter((id) => id !== titleId);
 		const clamps = parseClamps(this.opt('clamps', []), this.allProperties.concat(['file.name']));
 
+		this.rootEl.className = `flex-cards flex-cards-theme-${this.opt('theme', 'default')}`;
 		this.rootEl.toggleClass('is-masonry', this.opt('layout', 'masonry') === 'masonry');
 		this.rootEl.style.setProperty('--fc-width', `${this.opt('cardWidth', 300)}px`);
 		this.rootEl.style.setProperty('--fc-lines', String(this.opt('lines', 4)));
@@ -103,6 +104,8 @@ class FlexCardsView extends obsidian.BasesView {
 		title.dataset.property = titleId;
 		title.style.setProperty('--fc-lines', String(clamps[titleId] ?? titleLines));
 		this.renderValue(title, entry, titleId);
+		if (!title.textContent.trim()) title.setText(entry.file.basename);
+		this.linkToNote(title, entry.file);
 
 		for (const id of props) {
 			const value = entry.getValue(id);
@@ -119,6 +122,27 @@ class FlexCardsView extends obsidian.BasesView {
 		const value = entry.getValue(id);
 		if (value) value.renderTo(el, this.app.renderContext);
 	}
+
+	/* Open the card's own note from its title, whatever property the title is mapped to. A rendered value may already contain links of its own — a `link()` formula, or a property holding a wikilink — and those may point somewhere else entirely, so a click or hover that lands on one is left to it. */
+	linkToNote(el, file) {
+		if (!file) return;
+		el.addClass('flex-cards-title-link');
+		el.addEventListener('click', (evt) => {
+			if (evt.target.closest('a')) return;
+			evt.preventDefault();
+			this.app.workspace.openLinkText(file.path, '', obsidian.Keymap.isModEvent(evt));
+		});
+		el.addEventListener('mouseover', (evt) => {
+			if (evt.target.closest('a')) return;
+			this.app.workspace.trigger('hover-link', {
+				event: evt,
+				source: VIEW_TYPE,
+				hoverParent: this.app.renderContext,
+				targetEl: el,
+				linktext: file.path,
+			});
+		});
+	}
 }
 
 module.exports = class FlexCardsPlugin extends obsidian.Plugin {
@@ -128,6 +152,20 @@ module.exports = class FlexCardsPlugin extends obsidian.Plugin {
 			icon: 'lucide-layout-grid',
 			factory: (controller, containerEl) => new FlexCardsView(controller, containerEl),
 			options: () => [
+				{
+					type: 'dropdown',
+					key: 'theme',
+					displayName: 'Theme',
+					default: 'default',
+					options: {
+						default: 'Default — bordered card',
+						plain: 'Plain — no border, spacing only',
+						compact: 'Compact — tight, labels inline',
+						paper: 'Paper — serif, roomy leading',
+						index: 'Index card — ruled, accent edge',
+						callout: 'Callout — tinted panel',
+					},
+				},
 				{ type: 'slider', key: 'cardWidth', displayName: 'Card width', default: 300, min: 180, max: 700, step: 10 },
 				{
 					type: 'dropdown',

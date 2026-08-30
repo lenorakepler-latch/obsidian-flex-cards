@@ -1,7 +1,37 @@
+/* Everything a theme changes goes through these custom properties. A theme is an override block, and so is a snippet of your own — see the Themes section of the README. */
 .flex-cards {
   --fc-width: 300px;
   --fc-lines: 4;
   --fc-max-height: none;
+
+  --fc-gap: var(--size-4-2);
+  --fc-card-bg: var(--background-primary);
+  --fc-card-border: 1px solid var(--background-modifier-border);
+  --fc-card-radius: var(--radius-m);
+  --fc-card-pad: var(--size-4-3);
+  --fc-card-shadow: none;
+  --fc-card-accent: none;
+
+  --fc-title-font: inherit;
+  --fc-title-size: var(--font-ui-medium);
+  --fc-title-weight: var(--font-semibold);
+  --fc-title-color: var(--text-normal);
+  --fc-title-gap: var(--size-4-2);
+
+  --fc-label-size: var(--font-smallest);
+  --fc-label-color: var(--text-faint);
+  --fc-label-transform: uppercase;
+  --fc-label-weight: inherit;
+  --fc-label-font: inherit;
+  --fc-label-width: auto;
+
+  --fc-value-font: inherit;
+  --fc-value-size: var(--font-ui-small);
+  --fc-value-color: var(--text-normal);
+  --fc-leading: var(--line-height-tight);
+  --fc-prop-gap: var(--size-4-2);
+  --fc-prop-rule: none;
+
   height: 100%;
   overflow-y: auto;
   padding: var(--size-4-3);
@@ -17,7 +47,7 @@
 .flex-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--fc-width), 1fr));
-  gap: var(--size-4-2);
+  gap: var(--fc-gap);
   align-items: start;
 }
 
@@ -25,44 +55,55 @@
 .flex-cards.is-masonry .flex-cards-grid {
   display: block;
   columns: var(--fc-width);
-  column-gap: var(--size-4-2);
+  column-gap: var(--fc-gap);
 }
 
 .flex-cards.is-masonry .flex-cards-card {
   break-inside: avoid;
-  margin-bottom: var(--size-4-2);
+  margin-bottom: var(--fc-gap);
 }
 
 .flex-cards-card {
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  padding: var(--size-4-3);
+  background: var(--fc-card-bg);
+  border: var(--fc-card-border);
+  border-left: var(--fc-card-accent, var(--fc-card-border));
+  border-radius: var(--fc-card-radius);
+  padding: var(--fc-card-pad);
+  box-shadow: var(--fc-card-shadow);
   max-height: var(--fc-max-height);
   overflow-y: auto;
 }
 
 .flex-cards-title {
-  font-weight: var(--font-semibold);
+  font-family: var(--fc-title-font);
+  font-size: var(--fc-title-size);
+  font-weight: var(--fc-title-weight);
+  color: var(--fc-title-color);
   line-height: var(--line-height-tight);
-  margin-bottom: var(--size-4-2);
+  margin-bottom: var(--fc-title-gap);
 }
 
 .flex-cards-property + .flex-cards-property {
-  margin-top: var(--size-4-2);
+  margin-top: var(--fc-prop-gap);
+  border-top: var(--fc-prop-rule);
+  padding-top: var(--fc-prop-gap);
 }
 
 .flex-cards-label {
-  font-size: var(--font-smallest);
-  color: var(--text-faint);
-  text-transform: uppercase;
+  font-family: var(--fc-label-font);
+  font-size: var(--fc-label-size);
+  color: var(--fc-label-color);
+  font-weight: var(--fc-label-weight);
+  text-transform: var(--fc-label-transform);
   letter-spacing: 0.04em;
+  flex: 0 0 var(--fc-label-width);
 }
 
 .flex-cards-value {
-  font-size: var(--font-ui-small);
-  color: var(--text-normal);
-  line-height: var(--line-height-tight);
+  font-family: var(--fc-value-font);
+  font-size: var(--fc-value-size);
+  color: var(--fc-value-color);
+  line-height: var(--fc-leading);
 }
 
 /* The whole point: clamp to a per-property line count instead of one shared line. Unset --fc-lines on a property to let it run to full length. */
@@ -74,6 +115,81 @@
   overflow: hidden;
 }
 
+.flex-cards-title-link {
+  cursor: pointer;
+}
+
+.flex-cards-title-link:hover {
+  color: var(--text-accent-hover);
+  text-decoration: underline;
+}
+
 .flex-cards-sentinel {
   height: 1px;
+}
+
+/* ---- Themes ---------------------------------------------------------- */
+
+.flex-cards-theme-plain {
+  --fc-card-bg: transparent;
+  --fc-card-border: none;
+  --fc-card-pad: 0 0 var(--size-4-2);
+  --fc-prop-rule: 1px solid var(--background-modifier-border);
+  --fc-gap: var(--size-4-5);
+}
+
+.flex-cards-theme-compact {
+  --fc-card-pad: var(--size-4-2);
+  --fc-card-radius: var(--radius-s);
+  --fc-title-size: var(--font-ui-small);
+  --fc-title-gap: var(--size-4-1);
+  --fc-value-size: var(--font-smallest);
+  --fc-label-width: 5.5em;
+  --fc-label-transform: none;
+  --fc-prop-gap: var(--size-4-1);
+  --fc-gap: var(--size-4-1);
+}
+
+/* Label beside the value rather than above it. The label is flex-basis'd so the values line up down the card. */
+.flex-cards-theme-compact .flex-cards-property {
+  display: flex;
+  gap: var(--size-4-2);
+  align-items: baseline;
+}
+
+.flex-cards-theme-compact .flex-cards-value {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.flex-cards-theme-paper {
+  --fc-card-pad: var(--size-4-5);
+  --fc-card-shadow: var(--shadow-s);
+  --fc-title-font: var(--font-text);
+  --fc-title-size: var(--font-ui-large);
+  --fc-value-font: var(--font-text);
+  --fc-value-size: var(--font-ui-medium);
+  --fc-leading: var(--line-height-normal);
+  --fc-prop-gap: var(--size-4-4);
+  --fc-label-color: var(--text-accent);
+}
+
+.flex-cards-theme-index {
+  --fc-card-bg: var(--background-primary-alt);
+  --fc-card-accent: 3px solid var(--color-accent);
+  --fc-card-radius: var(--radius-s);
+  --fc-label-font: var(--font-monospace);
+  --fc-label-size: var(--font-smallest);
+  --fc-prop-rule: 1px dotted var(--background-modifier-border);
+  --fc-title-font: var(--font-text);
+}
+
+.flex-cards-theme-callout {
+  --fc-card-bg: var(--background-modifier-hover);
+  --fc-card-border: 1px solid transparent;
+  --fc-card-radius: var(--radius-l);
+  --fc-card-pad: var(--size-4-4);
+  --fc-label-color: var(--text-muted);
+  --fc-label-weight: var(--font-semibold);
+  --fc-title-color: var(--text-accent);
 }

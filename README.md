@@ -14,15 +14,40 @@ Set per view, from the Bases toolbar. They persist in the `.base` file.
 
 | Option | Default | What it does |
 | --- | --- | --- |
+| Theme | Default | Card look, chosen per view — see below |
 | Card width | 300 | Minimum column width, in pixels |
 | Layout | Masonry | `masonry` gives every card its natural height; `grid` makes each row equal |
 | Lines per property | 4 | Default clamp for any property without an override |
 | Lines in title | 2 | Clamp for the title |
 | Per-property lines | — | One `property: lines` per row, e.g. `claude_summary: 8`. Accepts a bare name or a full id (`formula.Paper`, `file.name`) |
 | Max card height | 0 | 0 leaves cards unbounded; any other value caps them and scrolls the overflow |
-| Title property | File name | Which property renders as the card title. It is dropped from the body list, so it never appears twice — and it renders as the title whether or not it is in the view's property order |
+| Title property | File name | Which property renders as the card title. It is dropped from the body list, so it never appears twice — and it renders as the title whether or not it is in the view's property order. Whatever it points at, the title opens that card's note: click to open, Cmd or Ctrl to open in a new tab, hover for a preview. If the property is empty on a given note, the title falls back to the file name |
 | Show property names | on | Small uppercase label above each value |
 | Hide empty properties | on | Skip a property on cards where it has no value |
+
+## Themes
+
+Set per view, so one base can hold a dense triage grid and a roomy reading grid over the same notes.
+
+| Theme | Looks like |
+| --- | --- |
+| Default | Bordered card on the page background |
+| Plain | No border or fill — just spacing and a rule between properties |
+| Compact | Tight padding, small type, labels beside their values in an aligned column |
+| Paper | Serif, generous leading and padding, a soft shadow. For reading rather than scanning |
+| Index card | Alt background, accent edge down the left, monospace labels, dotted rules |
+| Callout | Tinted panel, round corners, accent title |
+
+Every theme is a block of custom-property overrides, so writing your own is the same job. Add a snippet under Settings → Appearance:
+
+```css
+.flex-cards-theme-paper {
+  --fc-card-shadow: none;
+  --fc-value-font: Bitter;
+}
+```
+
+The variables are `--fc-gap`, `--fc-card-{bg,border,radius,pad,shadow,accent}`, `--fc-title-{font,size,weight,color,gap}`, `--fc-label-{font,size,color,weight,transform,width}`, `--fc-value-{font,size,color}`, `--fc-leading`, `--fc-prop-gap`, and `--fc-prop-rule`. They are declared with their defaults at the top of `styles.css`.
 
 ## Styling
 
