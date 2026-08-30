@@ -14,6 +14,10 @@ function resolveId(name, all) {
 	return all.find((id) => id.slice(id.indexOf('.') + 1) === name) || null;
 }
 
+function slug(text) {
+	return String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 /** Parse the "property: lines" override list into {propertyId: lines}. */
 function parseClamps(lines, all) {
 	const out = {};
@@ -67,6 +71,9 @@ class FlexCardsView extends obsidian.BasesView {
 			labels: this.opt('labels', true),
 			hideEmpty: this.opt('hideEmpty', true),
 			titleLines: this.opt('titleLines', 2),
+			classProps: (this.opt('cardClasses', []))
+				.map((name) => resolveId(name.trim(), this.allProperties))
+				.filter(Boolean),
 		};
 
 		for (const group of this.data.groupedData) {
@@ -96,9 +103,26 @@ class FlexCardsView extends obsidian.BasesView {
 		this.observer.observe(this.sentinel);
 	}
 
+	/* Turn the chosen properties into classes on the card, so a snippet can style a card by what is in its frontmatter. A truthy value yields `fc-<property>`, and every value also yields `fc-<property>-<value>`; a list contributes one class per item. */
+	classesFor(entry) {
+		const out = [];
+		for (const id of this.settings.classProps) {
+			const value = entry.getValue(id);
+			if (!value) continue;
+			const prop = slug(id.slice(id.indexOf('.') + 1));
+			if (!prop) continue;
+			if (value.isTruthy()) out.push(`fc-${prop}`);
+			for (const part of value.toString().split(',')) {
+				const v = slug(part);
+				if (v && v.length <= 32) out.push(`fc-${prop}-${v}`);
+			}
+		}
+		return out;
+	}
+
 	renderCard(grid, entry) {
 		const { titleId, props, clamps, labels, hideEmpty, titleLines } = this.settings;
-		const card = grid.createDiv({ cls: 'flex-cards-card' });
+		const card = grid.createDiv({ cls: ['flex-cards-card', ...this.classesFor(entry)] });
 
 		const title = card.createDiv({ cls: 'flex-cards-title' });
 		title.dataset.property = titleId;
@@ -196,6 +220,12 @@ module.exports = class FlexCardsPlugin extends obsidian.Plugin {
 						{ type: 'property', key: 'titleProp', displayName: 'Title property', placeholder: 'File name' },
 						{ type: 'toggle', key: 'labels', displayName: 'Show property names', default: true },
 						{ type: 'toggle', key: 'hideEmpty', displayName: 'Hide empty properties', default: true },
+						{
+							type: 'multitext',
+							key: 'cardClasses',
+							displayName: 'Properties to expose as card classes',
+							placeholder: 'Final Postdoc',
+						},
 					],
 				},
 			],

@@ -24,6 +24,7 @@ Set per view, from the Bases toolbar. They persist in the `.base` file.
 | Title property | File name | Which property renders as the card title. It is dropped from the body list, so it never appears twice — and it renders as the title whether or not it is in the view's property order. Whatever it points at, the title opens that card's note: click to open, Cmd or Ctrl to open in a new tab, hover for a preview. If the property is empty on a given note, the title falls back to the file name |
 | Show property names | on | Small uppercase label above each value |
 | Hide empty properties | on | Skip a property on cards where it has no value |
+| Properties to expose as card classes | — | One property name per row. Each becomes a class on the cards — see below |
 
 ## Themes
 
@@ -61,6 +62,22 @@ Every property div carries `data-property` — `note.<name>`, `formula.<Name>`, 
 ```
 
 `--fc-lines` is the clamp, and unsetting it lets a value run to full length. The classes are `.flex-cards`, `.flex-cards-group`, `.flex-cards-grid`, `.flex-cards-card`, `.flex-cards-title`, `.flex-cards-property`, `.flex-cards-label`, `.flex-cards-value`.
+
+### Styling a card by its frontmatter
+
+List a property under **Properties to expose as card classes** and every card gains classes derived from its value. A truthy value gives `fc-<property>`, and the value itself gives `fc-<property>-<value>`. A list contributes one class per item, so `tags: [paper, zotero]` yields `fc-tags`, `fc-tags-paper`, and `fc-tags-zotero`. Names are lowercased with runs of punctuation collapsed to hyphens, so `Final Postdoc` becomes `final-postdoc`. Values longer than 32 characters are skipped, since a summary makes a useless class name.
+
+```css
+.flex-cards-card.fc-final-postdoc {
+  --fc-card-accent: 3px solid var(--color-green);
+}
+
+.flex-cards-card.fc-has-pdf-false {
+  opacity: 0.6;
+}
+```
+
+Only listed properties produce classes — every property on every card would otherwise be a lot of markup for nothing.
 
 ## Notes
 
