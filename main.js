@@ -30,6 +30,19 @@ function parseClamps(lines, all) {
 	return out;
 }
 
+/* Parse the editable list into {propertyId: type|null}. A row is a property name, optionally followed by a control type; without one the type is inferred from the value at render time. Only `note.` properties are editable — `file.` and `formula.` are derived, and there is nothing to write back to. */
+function parseEditable(lines, all) {
+	const out = {};
+	for (const line of lines || []) {
+		const m = /^(.*?)\s*[:=]\s*(check|checkbox|text|number)$/i.exec(line.trim());
+		const id = resolveId(m ? m[1] : line.trim(), all);
+		if (!id || !id.startsWith('note.')) continue;
+		const type = m ? m[2].toLowerCase() : null;
+		out[id] = type === 'checkbox' ? 'check' : type;
+	}
+	return out;
+}
+
 class FlexCardsView extends obsidian.BasesView {
 	constructor(controller, containerEl) {
 		super(controller);
@@ -74,6 +87,7 @@ class FlexCardsView extends obsidian.BasesView {
 			classProps: (this.opt('cardClasses', []))
 				.map((name) => resolveId(name.trim(), this.allProperties))
 				.filter(Boolean),
+			editable: parseEditable(this.opt('editable', []), this.allProperties),
 		};
 
 		for (const group of this.data.groupedData) {
@@ -133,18 +147,90 @@ class FlexCardsView extends obsidian.BasesView {
 
 		for (const id of props) {
 			const value = entry.getValue(id);
-			if (hideEmpty && (value === null || value.toString() === '')) continue;
+			const editor = this.settings.editable[id];
+			// An editable property has to survive `hideEmpty`, or a field that is missing is a field you can never set.
+			if (!editor && hideEmpty && (value === null || value.toString() === '')) continue;
 			const row = card.createDiv({ cls: 'flex-cards-property' });
 			row.dataset.property = id;
 			if (id in clamps) row.style.setProperty('--fc-lines', String(clamps[id]));
 			if (labels) row.createDiv({ cls: 'flex-cards-label', text: this.config.getDisplayName(id) });
-			this.renderValue(row.createDiv({ cls: 'flex-cards-value' }), entry, id);
+			const cell = row.createDiv({ cls: 'flex-cards-value' });
+			if (editor) this.renderEditable(cell, entry, id, editor);
+			else this.renderValue(cell, entry, id);
 		}
 	}
 
 	renderValue(el, entry, id) {
 		const value = entry.getValue(id);
 		if (value) value.renderTo(el, this.app.renderContext);
+	}
+
+	frontmatterOf(file) {
+		return this.app.metadataCache.getFileCache(file)?.frontmatter || {};
+	}
+
+	/* Editing goes through `processFrontMatter`, the only public write path — the property editors core uses in table cells are not exported, so the controls here are our own. */
+	async setProperty(file, name, value) {
+		await this.app.fileManager.processFrontMatter(file, (fm) => {
+			fm[name] = value;
+		});
+	}
+
+	renderEditable(el, entry, id, declaredType) {
+		const name = id.slice('note.'.length);
+		const raw = this.frontmatterOf(entry.file)[name];
+
+		// A list needs a real multi-value control; until there is one, show it rather than let a text box flatten it to a string.
+		if (Array.isArray(raw)) return this.renderValue(el, entry, id);
+
+		const type = declaredType || (typeof raw === 'boolean' ? 'check' : typeof raw === 'number' ? 'number' : 'text');
+		el.addClass('is-editable');
+
+		if (type === 'check') {
+			const box = el.createEl('input', { type: 'checkbox' });
+			box.checked = raw === true;
+			box.addEventListener('click', (evt) => evt.stopPropagation());
+			box.addEventListener('change', () => this.setProperty(entry.file, name, box.checked));
+			return;
+		}
+
+		this.renderValue(el, entry, id);
+		el.addEventListener('click', (evt) => {
+			if (evt.target.closest('a') || el.hasClass('is-editing')) return;
+			this.openEditor(el, entry, id, name, raw, type);
+		});
+	}
+
+	openEditor(el, entry, id, name, raw, type) {
+		el.addClass('is-editing');
+		el.empty();
+		const input = type === 'number'
+			? el.createEl('input', { type: 'number', value: raw ?? '' })
+			: el.createEl('textarea', { text: raw ?? '' });
+
+		let done = false;
+		const close = async (save) => {
+			if (done) return;
+			done = true;
+			const text = input.value;
+			el.removeClass('is-editing');
+			el.empty();
+			if (save && type === 'number' && text.trim() !== '' && !Number.isNaN(Number(text))) {
+				await this.setProperty(entry.file, name, Number(text));
+			} else if (save && type !== 'number' && text !== String(raw ?? '')) {
+				await this.setProperty(entry.file, name, text);
+			}
+			// A save triggers a re-render of the whole view; a cancel does not, so repaint the cell.
+			if (el.isConnected && !el.hasChildNodes()) this.renderValue(el, entry, id);
+		};
+
+		input.addEventListener('blur', () => close(true));
+		input.addEventListener('keydown', (evt) => {
+			if (evt.key === 'Escape') { evt.preventDefault(); close(false); }
+			if (evt.key === 'Enter' && !evt.shiftKey) { evt.preventDefault(); close(true); }
+		});
+		input.focus();
+		input.select();
 	}
 
 	/* Open the card's own note from its title, whatever property the title is mapped to. A rendered value may already contain links of its own — a `link()` formula, or a property holding a wikilink — and those may point somewhere else entirely, so a click or hover that lands on one is left to it. */
@@ -225,6 +311,12 @@ module.exports = class FlexCardsPlugin extends obsidian.Plugin {
 							key: 'cardClasses',
 							displayName: 'Properties to expose as card classes',
 							placeholder: 'Final Postdoc',
+						},
+						{
+							type: 'multitext',
+							key: 'editable',
+							displayName: 'Editable properties',
+							placeholder: 'Will Apply: check',
 						},
 					],
 				},

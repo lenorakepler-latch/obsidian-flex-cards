@@ -115,6 +115,37 @@
   overflow: hidden;
 }
 
+.flex-cards-value.is-editable:not(.is-editing):hover {
+  background: var(--background-modifier-hover);
+  border-radius: var(--radius-s);
+  cursor: text;
+}
+
+/* Editing has to escape the clamp, or you are typing into a box that hides most of what you wrote. */
+.flex-cards-value.is-editing {
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.flex-cards-value textarea,
+.flex-cards-value input[type='number'] {
+  width: 100%;
+  min-height: 4em;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  padding: var(--size-2-2);
+  resize: vertical;
+}
+
+.flex-cards-value input[type='number'] {
+  min-height: 0;
+}
+
+.flex-cards-value input[type='checkbox'] {
+  margin: 0;
+}
+
 .flex-cards-title-link {
   cursor: pointer;
 }

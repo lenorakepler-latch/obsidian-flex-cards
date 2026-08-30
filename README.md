@@ -25,6 +25,7 @@ Set per view, from the Bases toolbar. They persist in the `.base` file.
 | Show property names | on | Small uppercase label above each value |
 | Hide empty properties | on | Skip a property on cards where it has no value |
 | Properties to expose as card classes | — | One property name per row. Each becomes a class on the cards — see below |
+| Editable properties | — | One property name per row, optionally `: check`, `: text`, or `: number`. Those fields become editable on the card — see below |
 
 ## Themes
 
@@ -49,6 +50,30 @@ Every theme is a block of custom-property overrides, so writing your own is the 
 ```
 
 The variables are `--fc-gap`, `--fc-card-{bg,border,radius,pad,shadow,accent}`, `--fc-title-{font,size,weight,color,gap}`, `--fc-label-{font,size,color,weight,transform,width}`, `--fc-value-{font,size,color}`, `--fc-leading`, `--fc-prop-gap`, and `--fc-prop-rule`. They are declared with their defaults at the top of `styles.css`.
+
+## Editing from a card
+
+Obsidian's table view lets you edit a property in place; its card view does not, and the property editors core uses in table cells are not part of the public API. The write path is, though — so the controls here are this plugin's own, and deliberately cover only the two cases worth doing without a widget toolkit.
+
+List a property under **Editable properties**:
+
+```
+Will Apply: check
+Final Postdoc: check
+Thoughts
+Priority Score: number
+```
+
+A checkbox is live — click it and the frontmatter is written. Text and numbers are click-to-edit: the value renders normally until you click it, then becomes a box. Enter saves, Shift+Enter adds a line, Escape cancels, and clicking away saves.
+
+Without an explicit type the control is inferred from the value already in the file — a boolean gets a checkbox, a number a number box, anything else a text box. Give the type explicitly for a property that is often missing, since an absent value has nothing to infer from and would otherwise get a text box.
+
+Details worth knowing:
+
+- Editable properties ignore **Hide empty properties**, or a field that is missing would be a field you could never set.
+- Only `note.` properties can be edited. `file.` and `formula.` values are derived, with nothing to write back to, and are skipped if listed.
+- A list-valued property falls back to read-only rather than let a text box flatten it into a string.
+- Writes go through `app.fileManager.processFrontMatter`, the same path Obsidian's own property editor uses. That re-serializes the frontmatter block, so a folded `>-` scalar may come back as a quoted string. Obsidian does this whenever you edit properties in its own UI; it is a formatting change, not a content one.
 
 ## Styling
 
