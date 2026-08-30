@@ -51,9 +51,33 @@ With [BRAT](https://github.com/TfTHacker/obsidian42-brat): add this repository a
 
 By hand: copy `main.js`, `manifest.json`, and `styles.css` into `<vault>/.obsidian/plugins/flex-cards/`, then enable it under Community plugins.
 
-## Prior art
+## Credits and prior art
 
-[EzraMarks/obsidian-bases-css-guide](https://github.com/EzraMarks/obsidian-bases-css-guide) reaches the same diagnosis and works around it from the CSS side — packing every value into one `html()` formula, plus hidden spacer formulas for vertical room. Worth reading if you would rather not install a plugin. [Advanced Bases](https://github.com/brightwav3/advanced-bases) and [Grid Card View](https://github.com/mafflerbach/obsidian-grid-card-view) add card views of their own, but size cards globally rather than per property.
+No code from another plugin is vendored here. What follows is where the ideas and the diagnosis came from.
+
+**Obsidian's built-in Cards view** (core Bases plugin, Obsidian 1.12.x). The account of the layout above — uniform stride, `top` and `height` set inline per property, card height derived from one measured property — is what its shipped code does, read to work out whether CSS alone could fix this. It cannot, and that is why this is a plugin. The `data-property` attribute this plugin puts on each property div is that view's convention, kept deliberately so snippets written against the built-in cards keep working.
+
+**[EzraMarks/obsidian-bases-css-guide](https://github.com/EzraMarks/obsidian-bases-css-guide)** — the fullest writeup of the problem, and it reaches the same diagnosis independently. It solves it from the CSS side instead: pack every value into one `html()` formula so card height depends on a single property, add hidden `spacer_` formulas for coarse vertical room, and style the result. Two findings from it that shaped this plugin: that a formula's *original* name is the one that lands in `data-property`, and that packing costs you frontmatter pre-population on the "+ New" button. If you would rather not install anything, read that guide first.
+
+**[Advanced Bases](https://github.com/brightwav3/advanced-bases)** by Brightwav3 (MIT) — Cards Compact, Feed, and Timeline views. Its Feed view lazy-renders notes as they scroll in and unmounts them as they leave; the chunked `IntersectionObserver` rendering here is the same idea in a simpler form.
+
+**[Grid Card View](https://github.com/mafflerbach/obsidian-grid-card-view)** by mafflerbach (MIT) — a custom grid card view with card width and height sliders and scroll-on-overflow. The "max card height, scroll the overflow" option here is that behaviour, offered per view alongside clamping rather than as the only mode.
+
+### Forum threads
+
+This is a well-known limitation, and the people below described it before this plugin existed. If any of it lands in core, most of this plugin becomes unnecessary.
+
+- [Bases: word wrap in cards / multiple lines](https://forum.obsidian.md/t/bases-word-wrap-in-cards-multiple-lines/103846) — the feature request this plugin answers: set a property's height in card view, and let its value wrap. Still open.
+- [Improve compatibility of Bases Cards with CSS snippets](https://forum.obsidian.md/t/improve-compatibility-of-bases-cards-with-css-snippets/104590) — why snippets against the built-in cards fight the layout, including hiding labels and showing longer text without clipping. The label toggle and the `data-property` hook here both come out of what that thread asks for.
+- [Bases: support CSS customizations for properties](https://forum.obsidian.md/t/bases-support-css-customizations-for-properties/104752) — the request for per-property styling hooks.
+- [How change cards height in bases](https://forum.obsidian.md/t/how-change-cards-height-in-bases/105618) — card height growing with each added field, and the snippets people tried against it.
+- [Text wrap feature for bases](https://forum.obsidian.md/t/text-wrap-feature-for-bases/104422) — the same complaint from the table side.
+- [Card view size](https://forum.obsidian.md/t/card-view-size/98043) and [Card view for Bases with no header](https://forum.obsidian.md/t/card-view-for-bases-with-no-header/106615) — sizing and title requests that shaped the card width and title property options.
+- [dsebastien/obsidian-kanban-action-planner#6](https://github.com/dsebastien/obsidian-kanban-action-planner/issues/6) — the same wrap-or-truncate choice, posed for a kanban card.
+
+### API
+
+**[Build a Bases view](https://docs.obsidian.md/plugins/guides/bases-view)** and the `BasesView` / `BasesViewRegistration` / `Value.renderTo` declarations in [obsidian-api](https://github.com/obsidianmd/obsidian-api) are the API this is written against.
 
 ## License
 
