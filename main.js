@@ -84,7 +84,8 @@ class FlexCardsView extends obsidian.BasesView {
 			labels: this.opt('labels', true),
 			hideEmpty: this.opt('hideEmpty', true),
 			titleLines: this.opt('titleLines', 2),
-			coverId: this.config.getAsPropertyId('cover'),
+			// The stored value may be a full id or a bare property name depending on how it was set; accept either rather than silently rendering no cover.
+			coverId: this.config.getAsPropertyId('cover') || resolveId(String(this.opt('cover', '')).trim(), this.allProperties),
 			coverHeight: this.opt('coverHeight', 160),
 			classProps: (this.opt('cardClasses', []))
 				.map((name) => resolveId(name.trim(), this.allProperties))
