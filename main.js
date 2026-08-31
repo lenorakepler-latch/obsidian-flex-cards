@@ -84,6 +84,8 @@ class FlexCardsView extends obsidian.BasesView {
 			labels: this.opt('labels', true),
 			hideEmpty: this.opt('hideEmpty', true),
 			titleLines: this.opt('titleLines', 2),
+			coverId: this.config.getAsPropertyId('cover'),
+			coverHeight: this.opt('coverHeight', 160),
 			classProps: (this.opt('cardClasses', []))
 				.map((name) => resolveId(name.trim(), this.allProperties))
 				.filter(Boolean),
@@ -137,6 +139,7 @@ class FlexCardsView extends obsidian.BasesView {
 	renderCard(grid, entry) {
 		const { titleId, props, clamps, labels, hideEmpty, titleLines } = this.settings;
 		const card = grid.createDiv({ cls: ['flex-cards-card', ...this.classesFor(entry)] });
+		this.renderCover(card, entry);
 
 		const title = card.createDiv({ cls: 'flex-cards-title' });
 		title.dataset.property = titleId;
@@ -158,6 +161,29 @@ class FlexCardsView extends obsidian.BasesView {
 			if (editor) this.renderEditable(cell, entry, id, editor);
 			else this.renderValue(cell, entry, id);
 		}
+	}
+
+	/* Resolve a cover from whatever the property holds: a wikilink or plain path into the vault, or an http URL. Anything that does not resolve is left out rather than rendered as a broken image. */
+	renderCover(card, entry) {
+		const { coverId, coverHeight } = this.settings;
+		if (!coverId) return;
+		const raw = (entry.getValue(coverId)?.toString() || '').trim();
+		if (!raw) return;
+
+		const link = raw.replace(/^!?\[\[/, '').replace(/\]\]$/, '').split('|')[0].trim();
+		let src = null;
+		if (/^https?:\/\//.test(link)) {
+			src = link;
+		} else {
+			const file = this.app.metadataCache.getFirstLinkpathDest(link, entry.file.path);
+			if (file) src = this.app.vault.getResourcePath(file);
+		}
+		if (!src) return;
+
+		const img = card.createEl('img', { cls: 'flex-cards-cover' });
+		img.style.height = `${coverHeight}px`;
+		img.src = src;
+		img.loading = 'lazy';
 	}
 
 	renderValue(el, entry, id) {
@@ -277,6 +303,8 @@ module.exports = class FlexCardsPlugin extends obsidian.Plugin {
 					},
 				},
 				{ type: 'slider', key: 'cardWidth', displayName: 'Card width', default: 300, min: 180, max: 700, step: 10 },
+				{ type: 'property', key: 'cover', displayName: 'Cover image property', placeholder: 'None' },
+				{ type: 'slider', key: 'coverHeight', displayName: 'Cover height', default: 160, min: 60, max: 400, step: 10 },
 				{
 					type: 'dropdown',
 					key: 'layout',

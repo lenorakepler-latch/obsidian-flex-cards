@@ -16,6 +16,8 @@ Set per view, from the Bases toolbar. They persist in the `.base` file.
 | --- | --- | --- |
 | Theme | Default | Card look, chosen per view — see below |
 | Card width | 300 | Minimum column width, in pixels |
+| Cover image property | — | A property holding an image: a wikilink, a vault path, or an http URL. Rendered full-bleed at the top of the card |
+| Cover height | 160 | How tall that image is, in pixels |
 | Layout | Masonry | `masonry` gives every card its natural height; `grid` makes each row equal |
 | Lines per property | 4 | Default clamp for any property without an override |
 | Lines in title | 2 | Clamp for the title |

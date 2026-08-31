@@ -74,6 +74,15 @@
   overflow-y: auto;
 }
 
+.flex-cards-cover {
+  display: block;
+  width: calc(100% + 2 * var(--fc-card-pad));
+  margin: calc(-1 * var(--fc-card-pad)) calc(-1 * var(--fc-card-pad)) var(--fc-card-pad);
+  border-radius: var(--fc-card-radius) var(--fc-card-radius) 0 0;
+  object-fit: cover;
+  background: var(--background-secondary);
+}
+
 .flex-cards-title {
   font-family: var(--fc-title-font);
   font-size: var(--fc-title-size);
