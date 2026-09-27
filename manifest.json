@@ -1,7 +1,7 @@
 {
   "id": "flex-cards",
   "name": "Flex Cards for Bases",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "minAppVersion": "1.10.0",
   "description": "A Bases card view laid out in normal flow, so property values wrap to as many lines as you give them.",
   "author": "Lenora Kepler",
