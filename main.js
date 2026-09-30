@@ -49,10 +49,52 @@ class FlexCardsView extends obsidian.BasesView {
 		this.type = VIEW_TYPE;
 		this.rootEl = containerEl.createDiv({ cls: 'flex-cards' });
 		this.queue = [];
+		this.grids = [];
+		// Masonry column count depends on the width, so re-flow when the pane is resized.
+		this.resizer = new ResizeObserver(() => {
+			if (!this.masonry) return;
+			for (const grid of this.grids) if (grid.fcCols && this.columnCount(grid) !== grid.fcColumns) this.layoutGrid(grid);
+		});
+		this.resizer.observe(this.rootEl);
 	}
 
 	onunload() {
 		if (this.observer) this.observer.disconnect();
+		this.resizer.disconnect();
+	}
+
+	get masonry() {
+		return this.rootEl.hasClass('is-masonry');
+	}
+
+	/* CSS columns fill one column top to bottom before starting the next, so cards read down, not across. Masonry is therefore laid out here: the grid holds real column elements, and each card goes into whichever column is currently shortest — the first row fills left to right, and every later card lands in the next free slot. */
+	columnCount(grid) {
+		const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
+		const width = Number(this.opt('cardWidth', 300));
+		return Math.max(1, Math.floor((grid.clientWidth + gap) / (width + gap)));
+	}
+
+	/** (Re)build a masonry grid's columns and deal every card into them in order. */
+	layoutGrid(grid) {
+		grid.fcColumns = this.columnCount(grid);
+		grid.empty();
+		grid.fcCols = Array.from({ length: grid.fcColumns }, () => grid.createDiv({ cls: 'flex-cards-column' }));
+		for (const card of grid.fcCards) this.dealCard(grid, card);
+	}
+
+	dealCard(grid, card) {
+		const shortest = grid.fcCols.reduce((a, b) => (b.offsetHeight < a.offsetHeight ? b : a));
+		shortest.appendChild(card);
+	}
+
+	placeCard(grid, card) {
+		if (!this.masonry) return grid.appendChild(card);
+		grid.fcCards.push(card);
+		if (!grid.fcCols) {
+			this.layoutGrid(grid);
+		} else {
+			this.dealCard(grid, card);
+		}
 	}
 
 	opt(key, fallback) {
@@ -64,6 +106,7 @@ class FlexCardsView extends obsidian.BasesView {
 		if (this.observer) this.observer.disconnect();
 		this.rootEl.empty();
 		this.queue = [];
+		this.grids = [];
 
 		const order = this.config.getOrder();
 		const titleId = this.config.getAsPropertyId('titleProp') || 'file.name';
@@ -98,6 +141,8 @@ class FlexCardsView extends obsidian.BasesView {
 				this.rootEl.createDiv({ cls: 'flex-cards-group', text: group.key.toString() || '—' });
 			}
 			const grid = this.rootEl.createDiv({ cls: 'flex-cards-grid' });
+			grid.fcCards = [];
+			this.grids.push(grid);
 			for (const entry of group.entries) this.queue.push([grid, entry]);
 		}
 
@@ -139,7 +184,8 @@ class FlexCardsView extends obsidian.BasesView {
 
 	renderCard(grid, entry) {
 		const { titleId, props, clamps, labels, hideEmpty, titleLines } = this.settings;
-		const card = grid.createDiv({ cls: ['flex-cards-card', ...this.classesFor(entry)] });
+		// Built detached and placed last, so masonry measures the finished card.
+		const card = createDiv({ cls: ['flex-cards-card', ...this.classesFor(entry)] });
 		this.renderCover(card, entry);
 
 		const title = card.createDiv({ cls: 'flex-cards-title' });
@@ -162,6 +208,7 @@ class FlexCardsView extends obsidian.BasesView {
 			if (editor) this.renderEditable(cell, entry, id, editor);
 			else this.renderValue(cell, entry, id);
 		}
+		this.placeCard(grid, card);
 	}
 
 	/* Resolve a cover from whatever the property holds: a wikilink or plain path into the vault, or an http URL. Anything that does not resolve is left out rather than rendered as a broken image. */
