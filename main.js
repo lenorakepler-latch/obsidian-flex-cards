@@ -30,17 +30,23 @@ function parseClamps(lines, all) {
 	return out;
 }
 
-/* Parse the editable list into {propertyId: type|null}. A row is a property name, optionally followed by a control type; without one the type is inferred from the value at render time. Only `note.` properties are editable — `file.` and `formula.` are derived, and there is nothing to write back to. */
-function parseEditable(lines, all) {
+/* Parse the editable list into {lowercased property name: type|null}. A row is a property name, optionally followed by a control type; without one the type is inferred from the value at render time. Only note properties are editable — `file.` and `formula.` are derived, and there is nothing to write back to. Names are matched case-insensitively and not checked against the dataset: Obsidian property names are case-insensitive (`Status` in the base, `status` in the files), and a property absent from every file is still one you should be able to set. */
+function parseEditable(lines) {
 	const out = {};
 	for (const line of lines || []) {
 		const m = /^(.*?)\s*[:=]\s*(check|checkbox|text|number)$/i.exec(line.trim());
-		const id = resolveId(m ? m[1] : line.trim(), all);
-		if (!id || !id.startsWith('note.')) continue;
+		const name = (m ? m[1] : line.trim()).replace(/^note\./, '');
+		if (!name || /^(file|formula)\./.test(name)) continue;
 		const type = m ? m[2].toLowerCase() : null;
-		out[id] = type === 'checkbox' ? 'check' : type;
+		out[name.toLowerCase()] = type === 'checkbox' ? 'check' : type;
 	}
 	return out;
+}
+
+/** The frontmatter key this file actually uses for `name`, ignoring case; `name` itself when the file does not have it yet. */
+function frontmatterKey(fm, name) {
+	const lower = name.toLowerCase();
+	return Object.keys(fm).find((k) => k.toLowerCase() === lower) ?? name;
 }
 
 class FlexCardsView extends obsidian.BasesView {
@@ -133,7 +139,7 @@ class FlexCardsView extends obsidian.BasesView {
 			classProps: (this.opt('cardClasses', []))
 				.map((name) => resolveId(name.trim(), this.allProperties))
 				.filter(Boolean),
-			editable: parseEditable(this.opt('editable', []), this.allProperties),
+			editable: parseEditable(this.opt('editable', [])),
 		};
 
 		for (const group of this.data.groupedData) {
@@ -197,15 +203,17 @@ class FlexCardsView extends obsidian.BasesView {
 
 		for (const id of props) {
 			const value = entry.getValue(id);
-			const editor = this.settings.editable[id];
+			// `null` means "infer the type", so test for presence, not truthiness.
+			const editor = id.startsWith('note.') ? this.settings.editable[id.slice(5).toLowerCase()] : undefined;
+			const editable = editor !== undefined;
 			// An editable property has to survive `hideEmpty`, or a field that is missing is a field you can never set.
-			if (!editor && hideEmpty && (value === null || value.toString() === '')) continue;
+			if (!editable && hideEmpty && (value === null || value.toString() === '')) continue;
 			const row = card.createDiv({ cls: 'flex-cards-property' });
 			row.dataset.property = id;
 			if (id in clamps) row.style.setProperty('--fc-lines', String(clamps[id]));
 			if (labels) row.createDiv({ cls: 'flex-cards-label', text: this.config.getDisplayName(id) });
 			const cell = row.createDiv({ cls: 'flex-cards-value' });
-			if (editor) this.renderEditable(cell, entry, id, editor);
+			if (editable) this.renderEditable(cell, entry, id, editor);
 			else this.renderValue(cell, entry, id);
 		}
 		this.placeCard(grid, card);
@@ -251,8 +259,9 @@ class FlexCardsView extends obsidian.BasesView {
 	}
 
 	renderEditable(el, entry, id, declaredType) {
-		const name = id.slice('note.'.length);
-		const raw = this.frontmatterOf(entry.file)[name];
+		const fm = this.frontmatterOf(entry.file);
+		const name = frontmatterKey(fm, id.slice('note.'.length));
+		const raw = fm[name];
 
 		// A list needs a real multi-value control; until there is one, show it rather than let a text box flatten it to a string.
 		if (Array.isArray(raw)) return this.renderValue(el, entry, id);
