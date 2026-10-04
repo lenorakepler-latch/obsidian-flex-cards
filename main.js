@@ -126,7 +126,10 @@ class FlexCardsView extends obsidian.BasesView {
 
 		const order = this.config.getOrder();
 		const titleId = this.config.getAsPropertyId('titleProp') || 'file.name';
-		const props = order.filter((id) => id !== titleId);
+		const hiddenIds = this.opt('hiddenProps', [])
+			.map((name) => resolveLoose(String(name).trim(), this.allProperties, (id) => this.config.getDisplayName(id)))
+			.filter(Boolean);
+		const props = order.filter((id) => id !== titleId && !hiddenIds.includes(id));
 		const clamps = parseClamps(this.opt('clamps', []), this.allProperties.concat(['file.name']));
 
 		this.rootEl.className = `flex-cards flex-cards-theme-${this.opt('theme', 'default')}`;
@@ -139,6 +142,7 @@ class FlexCardsView extends obsidian.BasesView {
 		this.settings = {
 			titleId,
 			props,
+			hiddenIds,
 			clamps,
 			labels: this.opt('labels', true),
 			hideEmpty: this.opt('hideEmpty', true),
@@ -352,6 +356,16 @@ class FlexCardsView extends obsidian.BasesView {
 			if (editable) this.renderEditable(cell, entry, id, editor);
 			else this.renderValue(cell, entry, id);
 		}
+		// Present in the DOM but not displayed; see the `hiddenProps` option.
+		if (this.settings.hiddenIds.length) {
+			const hidden = card.createDiv({ cls: 'flex-cards-hidden' });
+			hidden.hidden = true;
+			for (const id of this.settings.hiddenIds) {
+				const cell = hidden.createDiv({ cls: 'flex-cards-value' });
+				cell.dataset.property = id;
+				this.renderValue(cell, entry, id);
+			}
+		}
 		this.placeCard(grid, card);
 	}
 
@@ -543,6 +557,12 @@ module.exports = class FlexCardsPlugin extends obsidian.Plugin {
 						{ type: 'property', key: 'titleProp', displayName: 'Title property', placeholder: 'File name' },
 						{ type: 'toggle', key: 'labels', displayName: 'Show property names', default: true },
 						{ type: 'toggle', key: 'hideEmpty', displayName: 'Hide empty properties', default: true },
+						{
+							type: 'multitext',
+							key: 'hiddenProps',
+							displayName: 'Hidden properties (kept in the card, not shown)',
+							placeholder: 'claude_summary',
+						},
 						{
 							type: 'multitext',
 							key: 'cardClasses',

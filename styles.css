@@ -294,3 +294,8 @@
   color: var(--text-error);
   padding-top: var(--size-4-1);
 }
+
+/* Hidden properties stay in the card's DOM; `hidden` already does this, but a theme setting `display` on the value class must not bring them back. */
+.flex-cards-hidden {
+  display: none !important;
+}
