@@ -236,3 +236,65 @@
   --fc-title-color: var(--color-accent-1);
   --fc-title-size: var(--font-ui-small);
 }
+
+/* Second group level and the group checkbox panel. */
+.flex-cards-subgroup {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  color: var(--text-faint);
+  padding: var(--size-4-2) 0 var(--size-4-1) var(--size-4-3);
+  border-left: 2px solid var(--background-modifier-border);
+  margin: var(--size-4-1) 0;
+}
+
+.flex-cards-filter {
+  margin-bottom: var(--size-4-2);
+  font-size: var(--font-ui-small);
+}
+
+.flex-cards-filter > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.flex-cards-filter-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-6);
+  padding: var(--size-4-2) 0;
+}
+
+.flex-cards-filter-level {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+  min-width: 160px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.flex-cards-filter-head {
+  display: flex;
+  gap: var(--size-4-2);
+  align-items: baseline;
+  color: var(--text-muted);
+  font-weight: var(--font-semibold);
+}
+
+.flex-cards-filter-bulk {
+  font-size: var(--font-smallest);
+  font-weight: normal;
+}
+
+.flex-cards-filter-item {
+  display: flex;
+  gap: var(--size-4-2);
+  align-items: center;
+  cursor: pointer;
+}
+
+.flex-cards-filter-count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: var(--font-smallest);
+}

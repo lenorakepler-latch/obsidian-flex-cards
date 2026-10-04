@@ -142,17 +142,115 @@ class FlexCardsView extends obsidian.BasesView {
 			editable: parseEditable(this.opt('editable', [])),
 		};
 
-		for (const group of this.data.groupedData) {
-			if (group.hasKey() && group.key) {
-				this.rootEl.createDiv({ cls: 'flex-cards-group', text: group.key.toString() || '—' });
+		this.drawGroups(this.readHidden());
+	}
+
+	/* Hidden groups live in two registered (and menu-hidden) multitext options, one per level, so they persist in the .base file through the documented `config.set` path. */
+	readHidden() {
+		const read = (key) => {
+			const value = this.config.get(key);
+			return new Set(Array.isArray(value) ? value.map(String) : []);
+		};
+		return [read('hiddenGroups1'), read('hiddenGroups2')];
+	}
+
+	/* The second level is the built-in `groupBy` (level 1) split again by one more property. Entries are bucketed by the displayed value, in first-seen order so the view's sort still decides the order of sub-groups. */
+	drawGroups(hidden) {
+		this.rootEl.querySelectorAll(':scope > :not(.flex-cards-filter)').forEach((el) => el.remove());
+		if (this.observer) this.observer.disconnect();
+		this.queue = [];
+		this.grids = [];
+
+		const id2 = this.config.getAsPropertyId('groupBy2') || resolveId(String(this.opt('groupBy2', '')).trim(), this.allProperties);
+		const groups = this.data.groupedData.map((group) => {
+			const subs = new Map();
+			for (const entry of group.entries) {
+				const name = id2 ? this.groupLabel(entry.getValue(id2)) : '';
+				if (!subs.has(name)) subs.set(name, []);
+				subs.get(name).push(entry);
 			}
-			const grid = this.rootEl.createDiv({ cls: 'flex-cards-grid' });
-			grid.fcCards = [];
-			this.grids.push(grid);
-			for (const entry of group.entries) this.queue.push([grid, entry]);
+			return { name: group.hasKey() && group.key ? this.groupLabel(group.key) : null, subs };
+		});
+
+		this.renderFilter(groups, id2, hidden);
+
+		for (const { name, subs } of groups) {
+			if (name !== null && hidden[0].has(name)) continue;
+			const visible = [...subs].filter(([sub]) => !id2 || !hidden[1].has(sub));
+			if (!visible.length) continue;
+			const section = this.rootEl.createDiv({ cls: 'flex-cards-section' });
+			if (name !== null) section.createDiv({ cls: 'flex-cards-group', text: name });
+			for (const [sub, entries] of visible) {
+				if (id2) section.createDiv({ cls: 'flex-cards-subgroup', text: sub });
+				const grid = section.createDiv({ cls: 'flex-cards-grid' });
+				grid.fcCards = [];
+				this.grids.push(grid);
+				for (const entry of entries) this.queue.push([grid, entry]);
+			}
 		}
 
 		this.flush();
+	}
+
+	groupLabel(value) {
+		return (value && value.toString()) || '—';
+	}
+
+	/* One checkbox list per level; a value is shown or hidden everywhere it occurs, so hiding "Stalled" at level 2 hides it under every level-1 group. Counts are over all entries, not just the visible ones, so a hidden group still says what is in it. */
+	renderFilter(groups, id2, hidden) {
+		const levels = [];
+		const level1 = new Map();
+		const level2 = new Map();
+		for (const { name, subs } of groups) {
+			for (const [sub, entries] of subs) {
+				if (name !== null) level1.set(name, (level1.get(name) || 0) + entries.length);
+				if (id2) level2.set(sub, (level2.get(sub) || 0) + entries.length);
+			}
+		}
+		if (level1.size) levels.push({ index: 0, title: 'Group', counts: level1 });
+		if (level2.size) levels.push({ index: 1, title: this.config.getDisplayName(id2), counts: level2 });
+
+		this.rootEl.querySelector(':scope > .flex-cards-filter')?.remove();
+		if (!levels.length || !this.opt('groupFilter', true)) return;
+
+		const hiddenCount = levels.reduce((n, { index, counts }) => n + [...counts.keys()].filter((k) => hidden[index].has(k)).length, 0);
+		const details = createEl('details', { cls: 'flex-cards-filter' });
+		this.rootEl.prepend(details);
+		details.open = Boolean(this.filterOpen);
+		details.addEventListener('toggle', () => { this.filterOpen = details.open; });
+		details.createEl('summary', { text: hiddenCount ? `Groups (${hiddenCount} hidden)` : 'Groups' });
+
+		const body = details.createDiv({ cls: 'flex-cards-filter-body' });
+		for (const { index, title, counts } of levels) {
+			const col = body.createDiv({ cls: 'flex-cards-filter-level' });
+			const head = col.createDiv({ cls: 'flex-cards-filter-head' });
+			head.createSpan({ cls: 'flex-cards-filter-title', text: title });
+			for (const [label, hide] of [['All', false], ['None', true]]) {
+				head.createEl('a', { cls: 'flex-cards-filter-bulk', text: label, href: '#' })
+					.addEventListener('click', (evt) => {
+						evt.preventDefault();
+						this.updateHidden(index, hidden, [...counts.keys()], hide);
+					});
+			}
+			for (const [name, count] of counts) {
+				const row = col.createEl('label', { cls: 'flex-cards-filter-item' });
+				const box = row.createEl('input', { type: 'checkbox' });
+				box.checked = !hidden[index].has(name);
+				box.addEventListener('change', () => this.updateHidden(index, hidden, [name], !box.checked));
+				row.createSpan({ text: name });
+				row.createSpan({ cls: 'flex-cards-filter-count', text: String(count) });
+			}
+		}
+	}
+
+	updateHidden(index, hidden, names, hide) {
+		const next = hidden.map((set) => new Set(set));
+		for (const name of names) next[index][hide ? 'add' : 'delete'](name);
+		this.config.set(index === 0 ? 'hiddenGroups1' : 'hiddenGroups2', [...next[index]]);
+		// Redraw from `next` rather than re-reading the config, in case `set` only takes effect on the next data update.
+		const scroll = this.rootEl.scrollTop;
+		this.drawGroups(next);
+		this.rootEl.scrollTop = scroll;
 	}
 
 	/** Render CHUNK cards, then park a sentinel that renders the next chunk when scrolled into view. */
@@ -369,6 +467,17 @@ module.exports = class FlexCardsPlugin extends obsidian.Plugin {
 					default: 'masonry',
 					options: { masonry: 'Masonry (each card its own height)', grid: 'Grid (equal height per row)' },
 				},
+				{
+					type: 'group',
+					displayName: 'Groups',
+					items: [
+						{ type: 'property', key: 'groupBy2', displayName: 'Then group by', placeholder: 'None' },
+						{ type: 'toggle', key: 'groupFilter', displayName: 'Show group checkboxes', default: true },
+					],
+				},
+				// State written by the checkboxes; registered so `config.set` persists it, but not meant to be edited by hand.
+				{ type: 'multitext', key: 'hiddenGroups1', displayName: 'Hidden groups', shouldHide: () => true },
+				{ type: 'multitext', key: 'hiddenGroups2', displayName: 'Hidden sub-groups', shouldHide: () => true },
 				{
 					type: 'group',
 					displayName: 'Text',
