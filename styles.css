@@ -10,7 +10,6 @@
   --fc-card-radius: var(--radius-m);
   --fc-card-pad: var(--size-4-3);
   --fc-card-shadow: none;
-  --fc-card-accent: none;
 
   --fc-title-font: inherit;
   --fc-title-size: var(--font-ui-medium);
@@ -234,5 +233,6 @@
   --fc-card-pad: var(--size-4-4);
   --fc-label-color: var(--text-muted);
   --fc-label-weight: var(--font-semibold);
-  --fc-title-color: var(--text-accent);
+  --fc-title-color: var(--color-accent-1);
+  --fc-title-size: var(--font-ui-small);
 }
