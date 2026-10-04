@@ -26,8 +26,11 @@ Set per view, from the Bases toolbar. They persist in the `.base` file.
 | Title property | File name | Which property renders as the card title. It is dropped from the body list, so it never appears twice — and it renders as the title whether or not it is in the view's property order. Whatever it points at, the title opens that card's note: click to open, Cmd or Ctrl to open in a new tab, hover for a preview. If the property is empty on a given note, the title falls back to the file name |
 | Show property names | on | Small uppercase label above each value |
 | Hide empty properties | on | Skip a property on cards where it has no value |
+| Hidden properties | — | One property name per row. Removed from the visible card but kept in each card's DOM — see below |
 | Properties to expose as card classes | — | One property name per row. Each becomes a class on the cards — see below |
 | Editable properties | — | One property name per row, optionally `: check`, `: text`, or `: number`. Those fields become editable on the card — see below |
+| Checkbox filters | — | One property name per row. Each gets a column of checkboxes, one per value, above the cards — see below |
+| Show filter checkboxes | on | Turn the whole checkbox panel off without clearing the list |
 
 ## Themes
 
@@ -76,6 +79,23 @@ Details worth knowing:
 - Only `note.` properties can be edited. `file.` and `formula.` values are derived, with nothing to write back to, and are skipped if listed.
 - A list-valued property falls back to read-only rather than let a text box flatten it into a string.
 - Writes go through `app.fileManager.processFrontMatter`, the same path Obsidian's own property editor uses. That re-serializes the frontmatter block, so a folded `>-` scalar may come back as a quoted string. Obsidian does this whenever you edit properties in its own UI; it is a formatting change, not a content one.
+
+## Filtering with checkboxes
+
+List properties under **Checkbox filters** and a collapsible **Filters** panel appears above the cards. Each property gets a column with one checkbox per distinct value and a count beside it. Uncheck a value to hide the cards that have it; **All** and **None** flip a whole column.
+
+- With several properties, a card must pass all of them to stay visible.
+- A list property such as tags contributes each item, so a card tagged `a, b` stays visible while either is checked. A card with no value counts as `—`.
+- Names match case-insensitively, and a full id (`note.status`) or the display name shown in the base also works. A name that matches nothing is reported in red at the top of the panel instead of being dropped.
+- Counts cover every card, not just the visible ones, so an unchecked value still says how many cards it hides.
+- If the view is grouped, the panel also gets a **Group** column that hides whole groups.
+- Unchecked values are saved in the `.base` file, so they survive a reload.
+
+This filters rather than groups: the cards stay in the view's own grouping and sort order.
+
+## Hidden properties
+
+Bases searches the properties a view lists, not what a card happens to display. To make a field searchable without cluttering the card, keep it in the view's property list and add it under **Hidden properties**. It is taken off the visible card and rendered into a hidden element inside it, so it is also present in the HTML for snippets or other plugins that read the page. It is rendered even if it is not in the property list, but then Bases search will not see it.
 
 ## Styling
 
