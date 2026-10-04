@@ -238,15 +238,6 @@
 }
 
 /* Second group level and the group checkbox panel. */
-.flex-cards-subgroup {
-  font-size: var(--font-ui-smaller);
-  font-weight: var(--font-medium);
-  color: var(--text-faint);
-  padding: var(--size-4-2) 0 var(--size-4-1) var(--size-4-3);
-  border-left: 2px solid var(--background-modifier-border);
-  margin: var(--size-4-1) 0;
-}
-
 .flex-cards-filter {
   margin-bottom: var(--size-4-2);
   font-size: var(--font-ui-small);
@@ -297,4 +288,9 @@
   margin-left: auto;
   color: var(--text-faint);
   font-size: var(--font-smallest);
+}
+
+.flex-cards-filter-missing {
+  color: var(--text-error);
+  padding-top: var(--size-4-1);
 }
