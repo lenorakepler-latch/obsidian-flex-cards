@@ -1,13 +1,18 @@
 'use strict';
 
-/* Flex Cards — a Bases card view that lays properties out in normal flow.
+/* Flex Cards — a Bases card view that lays properties out in normal flow, and a table view that shares its filtering, grouping, and class hooks.
 
    The built-in Cards view positions every property absolutely at a uniform stride and sizes the card from the MEASURED height of one tester property, so a card has a single line budget that every field shares. That is what clips a long summary at one line, and why a CSS snippet can only move the clipping around: the total is fixed before any field is rendered. Here nothing is absolutely positioned, so each field is as tall as its own clamp and the card is as tall as the sum. */
 
 const obsidian = require('obsidian');
 
 const VIEW_TYPE = 'flex-cards';
+const TABLE_VIEW_TYPE = 'flex-table';
 const CHUNK = 60;
+const MIN_COLUMN = 48;
+const DEFAULT_COLUMN = 180;
+// The built-in table's key for saved column widths, so a view can be switched between the two.
+const COLUMN_SIZE = 'columnSize';
 
 function resolveId(name, all) {
 	if (all.includes(name)) return name;
@@ -53,18 +58,265 @@ function parseEditable(lines) {
 	return out;
 }
 
+/** The saved widths as {propertyId: px}, keeping only usable numbers. */
+function parseWidths(saved) {
+	const out = {};
+	if (saved && typeof saved === 'object') {
+		for (const [id, px] of Object.entries(saved)) if (Number(px) > 0) out[id] = Number(px);
+	}
+	return out;
+}
+
 /** The frontmatter key this file actually uses for `name`, ignoring case; `name` itself when the file does not have it yet. */
 function frontmatterKey(fm, name) {
 	const lower = name.toLowerCase();
 	return Object.keys(fm).find((k) => k.toLowerCase() === lower) ?? name;
 }
 
-class FlexCardsView extends obsidian.BasesView {
-	constructor(controller, containerEl) {
+/* What the cards and the table have in common: the checkbox filters, group hiding, the state that persists them, chunked rendering, class generation, and the link to a note. A subclass supplies what an entry looks like (`renderEntry`) and how a group is laid out (`beginDraw`, `renderGroup`). */
+class FlexBaseView extends obsidian.BasesView {
+	constructor(controller, containerEl, type) {
 		super(controller);
-		this.type = VIEW_TYPE;
+		this.type = type;
 		this.rootEl = containerEl.createDiv({ cls: 'flex-cards' });
 		this.queue = [];
+	}
+
+	onunload() {
+		if (this.observer) this.observer.disconnect();
+	}
+
+	opt(key, fallback) {
+		const value = this.config.get(key);
+		return value === undefined || value === null || value === '' ? fallback : value;
+	}
+
+	/* Property ids for a list of names typed into an option; names that match nothing are dropped. The view's own columns are searched first: they are the ids the cells actually render, and `allProperties` can hold the same property under another case (`note.status` for a column the base calls `Status`), which would resolve to an id no cell has. */
+	resolveNames(names) {
+		const displayName = (id) => this.config.getDisplayName(id);
+		const order = this.config.getOrder();
+		return names.map((name) => {
+			const text = String(name).trim();
+			return resolveLoose(text, order, displayName) || resolveLoose(text, this.allProperties, displayName);
+		}).filter(Boolean);
+	}
+
+	/* Hidden state lives in two registered (and menu-hidden) multitext options, so it persists in the .base file through the documented `config.set` path: `hiddenGroups1` holds hidden built-in group names, `hiddenFilters` holds `<propertyId>::<value>` for each unchecked filter value. */
+	readHidden() {
+		const read = (key) => {
+			const value = this.config.get(key);
+			return Array.isArray(value) ? value.map(String) : [];
+		};
+		return { groups: new Set(read('hiddenGroups1')), filters: new Set(read('hiddenFilters')) };
+	}
+
+	writeHidden(hidden) {
+		this.config.set('hiddenGroups1', [...hidden.groups]);
+		this.config.set('hiddenFilters', [...hidden.filters]);
+	}
+
+	/* The distinct values an entry has for a filter property. A list contributes each item, so an entry tagged `a, b` shows under both and stays visible while either is checked; an empty value counts as '—'. */
+	filterValues(entry, id) {
+		const value = entry.getValue(id);
+		if (value && obsidian.ListValue && value instanceof obsidian.ListValue) {
+			const items = [];
+			for (let i = 0; i < value.length(); i++) items.push(this.groupLabel(value.get(i)));
+			return items.length ? items : ['—'];
+		}
+		return [this.groupLabel(value)];
+	}
+
+	/** Hooks for the subclass: reset whatever the last draw built, and lay out one group of entries (queueing each as `[target, entry]`). */
+	beginDraw() {}
+
+	renderGroup() {}
+
+	renderEntry() {}
+
+	drawGroups(hidden) {
+		this.rootEl.querySelectorAll(':scope > :not(.flex-cards-filter)').forEach((el) => el.remove());
+		if (this.observer) this.observer.disconnect();
+		this.queue = [];
+		this.beginDraw();
+
+		const filterNames = this.opt('filterProps', []).map((name) => String(name).trim()).filter(Boolean);
+		const resolved = filterNames.map((name) => [name, resolveLoose(name, this.allProperties, (id) => this.config.getDisplayName(id))]);
+		const filterIds = [...new Set(resolved.map(([, id]) => id).filter(Boolean))];
+		const missing = resolved.filter(([, id]) => !id).map(([name]) => name);
+		const key = (id, value) => `${id}::${value}`;
+		const passes = (entry) => filterIds.every((id) => this.filterValues(entry, id).some((v) => !hidden.filters.has(key(id, v))));
+
+		const groups = this.data.groupedData.map((group) => ({
+			name: group.hasKey() && group.key ? this.groupLabel(group.key) : null,
+			entries: group.entries,
+		}));
+
+		this.renderFilter(groups, filterIds, hidden, key, missing);
+
+		for (const { name, entries } of groups) {
+			if (name !== null && hidden.groups.has(name)) continue;
+			const visible = entries.filter(passes);
+			if (!visible.length) continue;
+			this.renderGroup(name, visible);
+		}
+
+		this.flush();
+	}
+
+	groupLabel(value) {
+		return (value && value.toString()) || '—';
+	}
+
+	/* One checkbox list per filter property, plus one for the built-in groups when the view has any. Unchecking a value hides the entries that have it; with several filter properties an entry must pass all of them.
+
+	   Each count is how many entries would be shown for that value given everything else currently applied — every other filter and the group checkboxes, but not the list's own checkboxes. So the numbers move as you check and uncheck, and an unchecked value still says how many entries it would bring back. */
+	renderFilter(groups, filterIds, hidden, key, missing) {
+		const rows = [];
+		for (const { name, entries } of groups) {
+			for (const entry of entries) {
+				rows.push({ name, values: new Map(filterIds.map((id) => [id, new Set(this.filterValues(entry, id))])) });
+			}
+		}
+		const passes = (row, id) => [...row.values.get(id)].some((v) => !hidden.filters.has(key(id, v)));
+		const groupShown = (row) => row.name === null || !hidden.groups.has(row.name);
+		const shown = rows.filter((row) => groupShown(row) && filterIds.every((id) => passes(row, id))).length;
+
+		const levels = [];
+		const groupCounts = new Map();
+		for (const row of rows) {
+			if (row.name === null) continue;
+			groupCounts.set(row.name, (groupCounts.get(row.name) || 0) + (filterIds.every((id) => passes(row, id)) ? 1 : 0));
+		}
+		if (groupCounts.size) {
+			levels.push({
+				title: 'Group',
+				counts: groupCounts,
+				set: hidden.groups,
+				toKey: (v) => v,
+			});
+		}
+		for (const id of filterIds) {
+			// Every value is listed, even at zero, so a checkbox does not vanish while the others narrow the view.
+			const counts = new Map();
+			for (const row of rows) for (const v of row.values.get(id)) counts.set(v, 0);
+			for (const row of rows) {
+				if (!groupShown(row) || !filterIds.every((other) => other === id || passes(row, other))) continue;
+				for (const v of row.values.get(id)) counts.set(v, counts.get(v) + 1);
+			}
+			levels.push({ title: this.config.getDisplayName(id), counts, set: hidden.filters, toKey: (v) => key(id, v) });
+		}
+
+		this.rootEl.querySelector(':scope > .flex-cards-filter')?.remove();
+		if ((!levels.length && !missing.length) || !this.opt('groupFilter', true)) return;
+
+		const hiddenCount = levels.reduce((n, { counts, set, toKey }) => n + [...counts.keys()].filter((v) => set.has(toKey(v))).length, 0);
+		const details = createEl('details', { cls: 'flex-cards-filter' });
+		this.rootEl.prepend(details);
+		details.open = Boolean(this.filterOpen);
+		details.addEventListener('toggle', () => { this.filterOpen = details.open; });
+		const total = shown === rows.length ? `${rows.length} total` : `${shown} of ${rows.length} shown`;
+		details.createEl('summary', { text: `${hiddenCount ? `Filters (${hiddenCount} hidden)` : 'Filters'} · ${total}` });
+
+		if (missing.length) {
+			details.createDiv({ cls: 'flex-cards-filter-missing', text: `No property named: ${missing.join(', ')}` });
+		}
+		const body = details.createDiv({ cls: 'flex-cards-filter-body' });
+		for (const level of levels) {
+			const col = body.createDiv({ cls: 'flex-cards-filter-level' });
+			const head = col.createDiv({ cls: 'flex-cards-filter-head' });
+			head.createSpan({ cls: 'flex-cards-filter-title', text: level.title });
+			for (const [label, hide] of [['All', false], ['None', true]]) {
+				head.createEl('a', { cls: 'flex-cards-filter-bulk', text: label, href: '#' })
+					.addEventListener('click', (evt) => {
+						evt.preventDefault();
+						this.updateHidden(hidden, level, [...level.counts.keys()], hide);
+					});
+			}
+			for (const [value, count] of level.counts) {
+				const row = col.createEl('label', { cls: ['flex-cards-filter-item', ...(count ? [] : ['is-empty'])] });
+				const box = row.createEl('input', { type: 'checkbox' });
+				box.checked = !level.set.has(level.toKey(value));
+				box.addEventListener('change', () => this.updateHidden(hidden, level, [value], !box.checked));
+				row.createSpan({ text: value });
+				row.createSpan({ cls: 'flex-cards-filter-count', text: String(count) });
+			}
+		}
+	}
+
+	updateHidden(hidden, level, values, hide) {
+		const next = { groups: new Set(hidden.groups), filters: new Set(hidden.filters) };
+		const set = level.set === hidden.groups ? next.groups : next.filters;
+		for (const value of values) set[hide ? 'add' : 'delete'](level.toKey(value));
+		this.writeHidden(next);
+		// Redraw from `next` rather than re-reading the config, in case `set` only takes effect on the next data update.
+		const scroll = this.rootEl.scrollTop;
+		this.drawGroups(next);
+		this.rootEl.scrollTop = scroll;
+	}
+
+	/** Render CHUNK entries, then park a sentinel that renders the next chunk when scrolled into view. */
+	flush() {
+		if (this.sentinel) this.sentinel.remove();
+		for (const [target, entry] of this.queue.splice(0, CHUNK)) this.renderEntry(target, entry);
+		if (!this.queue.length) return;
+
+		this.sentinel = this.rootEl.createDiv({ cls: 'flex-cards-sentinel' });
+		this.observer = new IntersectionObserver((entries) => {
+			if (entries.some((e) => e.isIntersecting)) {
+				this.observer.disconnect();
+				this.flush();
+			}
+		}, { root: this.rootEl, rootMargin: '400px' });
+		this.observer.observe(this.sentinel);
+	}
+
+	/* Turn the chosen properties into classes, so a snippet can style by what is in the frontmatter. A truthy value yields `fc-<property>`, and every value also yields `fc-<property>-<value>`; a list contributes one class per item. */
+	classNames(entry, ids) {
+		const out = [];
+		for (const id of ids) {
+			const value = entry.getValue(id);
+			if (!value) continue;
+			const prop = slug(id.slice(id.indexOf('.') + 1));
+			if (!prop) continue;
+			if (value.isTruthy()) out.push(`fc-${prop}`);
+			for (const part of value.toString().split(',')) {
+				const v = slug(part);
+				if (v && v.length <= 32) out.push(`fc-${prop}-${v}`);
+			}
+		}
+		return out;
+	}
+
+	renderValue(el, entry, id) {
+		const value = entry.getValue(id);
+		if (value) value.renderTo(el, this.app.renderContext);
+	}
+
+	/* Open an entry's own note from `el`, whatever property it renders. A rendered value may already contain links of its own — a `link()` formula, or a property holding a wikilink — and those may point somewhere else entirely, so a click or hover that lands on one is left to it. */
+	linkToNote(el, file) {
+		if (!file) return;
+		el.addClass('flex-cards-title-link');
+		el.addEventListener('click', (evt) => {
+			if (evt.target.closest('a')) return;
+			evt.preventDefault();
+			this.app.workspace.openLinkText(file.path, '', obsidian.Keymap.isModEvent(evt));
+		});
+		el.addEventListener('mouseover', (evt) => {
+			if (evt.target.closest('a')) return;
+			this.app.workspace.trigger('hover-link', {
+				event: evt,
+				source: this.type,
+				hoverParent: this.app.renderContext,
+				targetEl: el,
+				linktext: file.path,
+			});
+		});
+	}
+}
+
+class FlexCardsView extends FlexBaseView {
+	constructor(controller, containerEl) {
+		super(controller, containerEl, VIEW_TYPE);
 		this.grids = [];
 		// Masonry column count depends on the width, so re-flow when the pane is resized.
 		this.resizer = new ResizeObserver(() => {
@@ -75,7 +327,7 @@ class FlexCardsView extends obsidian.BasesView {
 	}
 
 	onunload() {
-		if (this.observer) this.observer.disconnect();
+		super.onunload();
 		this.resizer.disconnect();
 	}
 
@@ -113,11 +365,6 @@ class FlexCardsView extends obsidian.BasesView {
 		}
 	}
 
-	opt(key, fallback) {
-		const value = this.config.get(key);
-		return value === undefined || value === null || value === '' ? fallback : value;
-	}
-
 	onDataUpdated() {
 		if (this.observer) this.observer.disconnect();
 		this.rootEl.empty();
@@ -126,9 +373,7 @@ class FlexCardsView extends obsidian.BasesView {
 
 		const order = this.config.getOrder();
 		const titleId = this.config.getAsPropertyId('titleProp') || 'file.name';
-		const hiddenIds = this.opt('hiddenProps', [])
-			.map((name) => resolveLoose(String(name).trim(), this.allProperties, (id) => this.config.getDisplayName(id)))
-			.filter(Boolean);
+		const hiddenIds = this.resolveNames(this.opt('hiddenProps', []));
 		const props = order.filter((id) => id !== titleId && !hiddenIds.includes(id));
 		const clamps = parseClamps(this.opt('clamps', []), this.allProperties.concat(['file.name']));
 
@@ -150,188 +395,30 @@ class FlexCardsView extends obsidian.BasesView {
 			// The stored value may be a full id or a bare property name depending on how it was set; accept either rather than silently rendering no cover.
 			coverId: this.config.getAsPropertyId('cover') || resolveId(String(this.opt('cover', '')).trim(), this.allProperties),
 			coverHeight: this.opt('coverHeight', 160),
-			classProps: (this.opt('cardClasses', []))
-				.map((name) => resolveId(name.trim(), this.allProperties))
-				.filter(Boolean),
+			classProps: this.resolveNames(this.opt('cardClasses', [])),
 			editable: parseEditable(this.opt('editable', [])),
 		};
 
 		this.drawGroups(this.readHidden());
 	}
 
-	/* Hidden state lives in two registered (and menu-hidden) multitext options, so it persists in the .base file through the documented `config.set` path: `hiddenGroups1` holds hidden built-in group names, `hiddenFilters` holds `<propertyId>::<value>` for each unchecked filter value. */
-	readHidden() {
-		const read = (key) => {
-			const value = this.config.get(key);
-			return Array.isArray(value) ? value.map(String) : [];
-		};
-		return { groups: new Set(read('hiddenGroups1')), filters: new Set(read('hiddenFilters')) };
-	}
-
-	writeHidden(hidden) {
-		this.config.set('hiddenGroups1', [...hidden.groups]);
-		this.config.set('hiddenFilters', [...hidden.filters]);
-	}
-
-	/* The distinct values an entry has for a filter property. A list contributes each item, so an entry tagged `a, b` shows under both and stays visible while either is checked; an empty value counts as '—'. */
-	filterValues(entry, id) {
-		const value = entry.getValue(id);
-		if (value && obsidian.ListValue && value instanceof obsidian.ListValue) {
-			const items = [];
-			for (let i = 0; i < value.length(); i++) items.push(this.groupLabel(value.get(i)));
-			return items.length ? items : ['—'];
-		}
-		return [this.groupLabel(value)];
-	}
-
-	drawGroups(hidden) {
-		this.rootEl.querySelectorAll(':scope > :not(.flex-cards-filter)').forEach((el) => el.remove());
-		if (this.observer) this.observer.disconnect();
-		this.queue = [];
+	beginDraw() {
 		this.grids = [];
-
-		const filterNames = this.opt('filterProps', []).map((name) => String(name).trim()).filter(Boolean);
-		const resolved = filterNames.map((name) => [name, resolveLoose(name, this.allProperties, (id) => this.config.getDisplayName(id))]);
-		const filterIds = [...new Set(resolved.map(([, id]) => id).filter(Boolean))];
-		const missing = resolved.filter(([, id]) => !id).map(([name]) => name);
-		const key = (id, value) => `${id}::${value}`;
-		const passes = (entry) => filterIds.every((id) => this.filterValues(entry, id).some((v) => !hidden.filters.has(key(id, v))));
-
-		const groups = this.data.groupedData.map((group) => ({
-			name: group.hasKey() && group.key ? this.groupLabel(group.key) : null,
-			entries: group.entries,
-		}));
-
-		this.renderFilter(groups, filterIds, hidden, key, missing);
-
-		for (const { name, entries } of groups) {
-			if (name !== null && hidden.groups.has(name)) continue;
-			const visible = entries.filter(passes);
-			if (!visible.length) continue;
-			const section = this.rootEl.createDiv({ cls: 'flex-cards-section' });
-			if (name !== null) section.createDiv({ cls: 'flex-cards-group', text: name });
-			const grid = section.createDiv({ cls: 'flex-cards-grid' });
-			grid.fcCards = [];
-			this.grids.push(grid);
-			for (const entry of visible) this.queue.push([grid, entry]);
-		}
-
-		this.flush();
 	}
 
-	groupLabel(value) {
-		return (value && value.toString()) || '—';
+	renderGroup(name, entries) {
+		const section = this.rootEl.createDiv({ cls: 'flex-cards-section' });
+		if (name !== null) section.createDiv({ cls: 'flex-cards-group', text: name });
+		const grid = section.createDiv({ cls: 'flex-cards-grid' });
+		grid.fcCards = [];
+		this.grids.push(grid);
+		for (const entry of entries) this.queue.push([grid, entry]);
 	}
 
-	/* One checkbox list per filter property, plus one for the built-in groups when the view has any. Unchecking a value hides the entries that have it; with several filter properties an entry must pass all of them. Counts are over every entry, not just the visible ones, so an unchecked value still says what is behind it. */
-	renderFilter(groups, filterIds, hidden, key, missing) {
-		const levels = [];
-		const groupCounts = new Map();
-		for (const { name, entries } of groups) {
-			if (name !== null) groupCounts.set(name, (groupCounts.get(name) || 0) + entries.length);
-		}
-		if (groupCounts.size) {
-			levels.push({
-				title: 'Group',
-				counts: groupCounts,
-				set: hidden.groups,
-				toKey: (v) => v,
-			});
-		}
-		for (const id of filterIds) {
-			const counts = new Map();
-			for (const { entries } of groups) {
-				for (const entry of entries) {
-					for (const v of this.filterValues(entry, id)) counts.set(v, (counts.get(v) || 0) + 1);
-				}
-			}
-			levels.push({ title: this.config.getDisplayName(id), counts, set: hidden.filters, toKey: (v) => key(id, v) });
-		}
-
-		this.rootEl.querySelector(':scope > .flex-cards-filter')?.remove();
-		if ((!levels.length && !missing.length) || !this.opt('groupFilter', true)) return;
-
-		const hiddenCount = levels.reduce((n, { counts, set, toKey }) => n + [...counts.keys()].filter((v) => set.has(toKey(v))).length, 0);
-		const details = createEl('details', { cls: 'flex-cards-filter' });
-		this.rootEl.prepend(details);
-		details.open = Boolean(this.filterOpen);
-		details.addEventListener('toggle', () => { this.filterOpen = details.open; });
-		details.createEl('summary', { text: hiddenCount ? `Filters (${hiddenCount} hidden)` : 'Filters' });
-
-		if (missing.length) {
-			details.createDiv({ cls: 'flex-cards-filter-missing', text: `No property named: ${missing.join(', ')}` });
-		}
-		const body = details.createDiv({ cls: 'flex-cards-filter-body' });
-		for (const level of levels) {
-			const col = body.createDiv({ cls: 'flex-cards-filter-level' });
-			const head = col.createDiv({ cls: 'flex-cards-filter-head' });
-			head.createSpan({ cls: 'flex-cards-filter-title', text: level.title });
-			for (const [label, hide] of [['All', false], ['None', true]]) {
-				head.createEl('a', { cls: 'flex-cards-filter-bulk', text: label, href: '#' })
-					.addEventListener('click', (evt) => {
-						evt.preventDefault();
-						this.updateHidden(hidden, level, [...level.counts.keys()], hide);
-					});
-			}
-			for (const [value, count] of level.counts) {
-				const row = col.createEl('label', { cls: 'flex-cards-filter-item' });
-				const box = row.createEl('input', { type: 'checkbox' });
-				box.checked = !level.set.has(level.toKey(value));
-				box.addEventListener('change', () => this.updateHidden(hidden, level, [value], !box.checked));
-				row.createSpan({ text: value });
-				row.createSpan({ cls: 'flex-cards-filter-count', text: String(count) });
-			}
-		}
-	}
-
-	updateHidden(hidden, level, values, hide) {
-		const next = { groups: new Set(hidden.groups), filters: new Set(hidden.filters) };
-		const set = level.set === hidden.groups ? next.groups : next.filters;
-		for (const value of values) set[hide ? 'add' : 'delete'](level.toKey(value));
-		this.writeHidden(next);
-		// Redraw from `next` rather than re-reading the config, in case `set` only takes effect on the next data update.
-		const scroll = this.rootEl.scrollTop;
-		this.drawGroups(next);
-		this.rootEl.scrollTop = scroll;
-	}
-
-	/** Render CHUNK cards, then park a sentinel that renders the next chunk when scrolled into view. */
-	flush() {
-		if (this.sentinel) this.sentinel.remove();
-		for (const [grid, entry] of this.queue.splice(0, CHUNK)) this.renderCard(grid, entry);
-		if (!this.queue.length) return;
-
-		this.sentinel = this.rootEl.createDiv({ cls: 'flex-cards-sentinel' });
-		this.observer = new IntersectionObserver((entries) => {
-			if (entries.some((e) => e.isIntersecting)) {
-				this.observer.disconnect();
-				this.flush();
-			}
-		}, { root: this.rootEl, rootMargin: '400px' });
-		this.observer.observe(this.sentinel);
-	}
-
-	/* Turn the chosen properties into classes on the card, so a snippet can style a card by what is in its frontmatter. A truthy value yields `fc-<property>`, and every value also yields `fc-<property>-<value>`; a list contributes one class per item. */
-	classesFor(entry) {
-		const out = [];
-		for (const id of this.settings.classProps) {
-			const value = entry.getValue(id);
-			if (!value) continue;
-			const prop = slug(id.slice(id.indexOf('.') + 1));
-			if (!prop) continue;
-			if (value.isTruthy()) out.push(`fc-${prop}`);
-			for (const part of value.toString().split(',')) {
-				const v = slug(part);
-				if (v && v.length <= 32) out.push(`fc-${prop}-${v}`);
-			}
-		}
-		return out;
-	}
-
-	renderCard(grid, entry) {
+	renderEntry(grid, entry) {
 		const { titleId, props, clamps, labels, hideEmpty, titleLines } = this.settings;
 		// Built detached and placed last, so masonry measures the finished card.
-		const card = createDiv({ cls: ['flex-cards-card', ...this.classesFor(entry)] });
+		const card = createDiv({ cls: ['flex-cards-card', ...this.classNames(entry, this.settings.classProps)] });
 		this.renderCover(card, entry);
 
 		const title = card.createDiv({ cls: 'flex-cards-title' });
@@ -390,11 +477,6 @@ class FlexCardsView extends obsidian.BasesView {
 		img.style.height = `${coverHeight}px`;
 		img.src = src;
 		img.loading = 'lazy';
-	}
-
-	renderValue(el, entry, id) {
-		const value = entry.getValue(id);
-		if (value) value.renderTo(el, this.app.renderContext);
 	}
 
 	frontmatterOf(file) {
@@ -465,27 +547,162 @@ class FlexCardsView extends obsidian.BasesView {
 		input.focus();
 		input.select();
 	}
+}
 
-	/* Open the card's own note from its title, whatever property the title is mapped to. A rendered value may already contain links of its own — a `link()` formula, or a property holding a wikilink — and those may point somewhere else entirely, so a click or hover that lands on one is left to it. */
-	linkToNote(el, file) {
-		if (!file) return;
-		el.addClass('flex-cards-title-link');
-		el.addEventListener('click', (evt) => {
-			if (evt.target.closest('a')) return;
-			evt.preventDefault();
-			this.app.workspace.openLinkText(file.path, '', obsidian.Keymap.isModEvent(evt));
-		});
-		el.addEventListener('mouseover', (evt) => {
-			if (evt.target.closest('a')) return;
-			this.app.workspace.trigger('hover-link', {
-				event: evt,
-				source: VIEW_TYPE,
-				hoverParent: this.app.renderContext,
-				targetEl: el,
-				linktext: file.path,
-			});
-		});
+/* A table of the view's properties, one row per note. Groups become banner rows inside one table rather than separate tables, so the columns line up across groups. Each cell holds its value in a `flex-cards-value`, so the same per-property line clamp applies as on a card.
+
+   Columns resize by dragging the right edge of a header. Until the first drag the table is auto-laid-out to the pane width; a drag freezes every column at its current pixel width, switches to a fixed layout, and makes the table exactly as wide as its columns (the pane scrolls sideways when that is wider). Widths are saved per property under `columnSize`, the key and shape the built-in table uses (`{note.Status: 120}`), so they survive a reload and a reorder of the columns, and carry over if the view is switched to the built-in table. */
+class FlexTableView extends FlexBaseView {
+	constructor(controller, containerEl) {
+		super(controller, containerEl, TABLE_VIEW_TYPE);
 	}
+
+	onDataUpdated() {
+		if (this.observer) this.observer.disconnect();
+		this.rootEl.empty();
+		this.queue = [];
+
+		this.rootEl.className = 'flex-cards flex-cards-table';
+		this.rootEl.style.setProperty('--fc-lines', String(this.opt('lines', 3)));
+
+		this.settings = {
+			columns: this.config.getOrder(),
+			clamps: parseClamps(this.opt('clamps', []), this.allProperties.concat(['file.name'])),
+			classProps: this.resolveNames(this.opt('cellClasses', [])),
+			widths: parseWidths(this.config.get(COLUMN_SIZE)),
+		};
+
+		this.drawGroups(this.readHidden());
+	}
+
+	beginDraw() {
+		const { columns, widths } = this.settings;
+		this.table = this.rootEl.createEl('table', { cls: 'flex-table' });
+		const group = this.table.createEl('colgroup');
+		this.cols = columns.map(() => group.createEl('col'));
+		const row = this.table.createEl('thead').createEl('tr');
+		columns.forEach((id, i) => {
+			const th = row.createEl('th', { text: this.config.getDisplayName(id) });
+			th.dataset.property = id;
+			const grip = th.createDiv({ cls: 'flex-table-grip' });
+			grip.addEventListener('pointerdown', (evt) => this.startResize(evt, grip, i));
+			grip.addEventListener('dblclick', () => this.resetWidths());
+		});
+		// A column added after the widths were saved has no width of its own yet.
+		if (columns.some((id) => id in widths)) {
+			columns.forEach((id, i) => { this.cols[i].style.width = `${widths[id] ?? DEFAULT_COLUMN}px`; });
+			this.table.addClass('is-resized');
+			this.syncTableWidth();
+		}
+	}
+
+	colWidth(i) {
+		return parseFloat(this.cols[i].style.width) || 0;
+	}
+
+	/** In a fixed layout the table is as wide as its columns, so dragging one edge moves only that edge. */
+	syncTableWidth() {
+		const total = this.cols.reduce((sum, _col, i) => sum + this.colWidth(i), 0);
+		this.table.style.width = `${total}px`;
+	}
+
+	/** Pin every column at the width it has now. All widths are read before any is written, since writing one reflows the rest. */
+	freezeWidths() {
+		if (this.table.hasClass('is-resized')) return;
+		const measured = [...this.table.querySelectorAll('th')].map((th) => th.offsetWidth);
+		measured.forEach((width, i) => { this.cols[i].style.width = `${width}px`; });
+		this.table.addClass('is-resized');
+		this.syncTableWidth();
+	}
+
+	startResize(evt, grip, i) {
+		evt.preventDefault();
+		evt.stopPropagation();
+		this.freezeWidths();
+		const startX = evt.clientX;
+		const startWidth = this.colWidth(i);
+		grip.setPointerCapture(evt.pointerId);
+		this.table.addClass('is-resizing');
+
+		const move = (e) => {
+			this.cols[i].style.width = `${Math.max(MIN_COLUMN, startWidth + e.clientX - startX)}px`;
+			this.syncTableWidth();
+		};
+		const stop = () => {
+			grip.removeEventListener('pointermove', move);
+			grip.removeEventListener('pointerup', stop);
+			grip.removeEventListener('pointercancel', stop);
+			this.table.removeClass('is-resizing');
+			this.saveWidths();
+		};
+		grip.addEventListener('pointermove', move);
+		grip.addEventListener('pointerup', stop);
+		grip.addEventListener('pointercancel', stop);
+	}
+
+	/* Written to the config and also kept in `settings`, since a redraw for a filter change reads from there and the config may only take the new value on the next data update. */
+	saveWidths() {
+		const widths = {};
+		this.settings.columns.forEach((id, i) => { widths[id] = Math.round(this.colWidth(i)); });
+		this.settings.widths = widths;
+		this.config.set(COLUMN_SIZE, widths);
+	}
+
+	/** Back to the auto layout: forget the saved widths and unpin the columns. */
+	resetWidths() {
+		this.settings.widths = {};
+		this.config.set(COLUMN_SIZE, null);
+		for (const col of this.cols) col.style.width = '';
+		this.table.removeClass('is-resized');
+		this.table.style.width = '';
+	}
+
+	renderGroup(name, entries) {
+		const body = this.table.createEl('tbody');
+		if (name !== null) {
+			body.createEl('tr', { cls: 'flex-table-group-row' })
+				.createEl('td', { cls: 'flex-cards-group', text: name, attr: { colspan: String(this.settings.columns.length) } });
+		}
+		for (const entry of entries) this.queue.push([body, entry]);
+	}
+
+	/* Only a listed property's cell gets classes, and they come from that cell's own value: a `Status` cell holding "Done" gets `fc-status` and `fc-status-done`. */
+	renderEntry(body, entry) {
+		const { columns, clamps, classProps } = this.settings;
+		const row = body.createEl('tr');
+		for (const id of columns) {
+			const classes = classProps.includes(id) ? this.classNames(entry, [id]) : [];
+			const td = row.createEl('td', { cls: ['flex-table-cell', ...classes] });
+			td.dataset.property = id;
+			if (id in clamps) td.style.setProperty('--fc-lines', String(clamps[id]));
+			const cell = td.createDiv({ cls: 'flex-cards-value' });
+			this.renderValue(cell, entry, id);
+			// The file name is the one column that is always a note, so it opens that note like a card title does.
+			if (id === 'file.name') this.linkToNote(cell, entry.file);
+		}
+	}
+}
+
+/* The checkbox filter options and the state the checkboxes write; the same for both views, so they are defined once. */
+function filterOptions() {
+	return [
+		{
+			type: 'group',
+			displayName: 'Filters',
+			items: [
+				{
+					type: 'multitext',
+					key: 'filterProps',
+					displayName: 'Checkbox filters',
+					placeholder: 'Status',
+				},
+				{ type: 'toggle', key: 'groupFilter', displayName: 'Show filter checkboxes', default: true },
+			],
+		},
+		// State written by the checkboxes; registered so `config.set` persists it, but not meant to be edited by hand.
+		{ type: 'multitext', key: 'hiddenGroups1', displayName: 'Hidden groups', shouldHide: () => true },
+		{ type: 'multitext', key: 'hiddenFilters', displayName: 'Hidden filter values', shouldHide: () => true },
+	];
 }
 
 module.exports = class FlexCardsPlugin extends obsidian.Plugin {
@@ -519,22 +736,7 @@ module.exports = class FlexCardsPlugin extends obsidian.Plugin {
 					default: 'masonry',
 					options: { masonry: 'Masonry (each card its own height)', grid: 'Grid (equal height per row)' },
 				},
-				{
-					type: 'group',
-					displayName: 'Filters',
-					items: [
-						{
-							type: 'multitext',
-							key: 'filterProps',
-							displayName: 'Checkbox filters',
-							placeholder: 'Status',
-						},
-						{ type: 'toggle', key: 'groupFilter', displayName: 'Show filter checkboxes', default: true },
-					],
-				},
-				// State written by the checkboxes; registered so `config.set` persists it, but not meant to be edited by hand.
-				{ type: 'multitext', key: 'hiddenGroups1', displayName: 'Hidden groups', shouldHide: () => true },
-				{ type: 'multitext', key: 'hiddenFilters', displayName: 'Hidden filter values', shouldHide: () => true },
+				...filterOptions(),
 				{
 					type: 'group',
 					displayName: 'Text',
@@ -574,6 +776,40 @@ module.exports = class FlexCardsPlugin extends obsidian.Plugin {
 							key: 'editable',
 							displayName: 'Editable properties',
 							placeholder: 'Will Apply: check',
+						},
+					],
+				},
+			],
+		});
+
+		this.registerBasesView(TABLE_VIEW_TYPE, {
+			name: 'Flex table',
+			icon: 'lucide-table',
+			factory: (controller, containerEl) => new FlexTableView(controller, containerEl),
+			options: () => [
+				...filterOptions(),
+				{
+					type: 'group',
+					displayName: 'Text',
+					items: [
+						{ type: 'slider', key: 'lines', displayName: 'Lines per cell', default: 3, min: 1, max: 30, step: 1 },
+						{
+							type: 'multitext',
+							key: 'clamps',
+							displayName: 'Per-property lines',
+							placeholder: 'claude_summary: 8',
+						},
+					],
+				},
+				{
+					type: 'group',
+					displayName: 'Content',
+					items: [
+						{
+							type: 'multitext',
+							key: 'cellClasses',
+							displayName: 'Properties to expose as cell classes',
+							placeholder: 'Status',
 						},
 					],
 				},

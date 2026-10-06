@@ -1,6 +1,6 @@
 # Flex Cards for Obsidian Bases
 
-A Bases card view whose property values wrap. Give each property its own line count and the card grows to fit.
+A Bases card view whose property values wrap. Give each property its own line count and the card grows to fit. A companion table view shares its checkbox filters, group hiding, and class hooks.
 
 ## Why
 
@@ -10,7 +10,7 @@ Flex Cards registers its own Bases view type, so it owns its DOM. Nothing is abs
 
 ## Options
 
-Set per view, from the Bases toolbar. They persist in the `.base` file.
+These are the card view's options; the table view's are under [Table view](#table-view). Set per view, from the Bases toolbar. They persist in the `.base` file.
 
 | Option | Default | What it does |
 | --- | --- | --- |
@@ -82,16 +82,17 @@ Details worth knowing:
 
 ## Filtering with checkboxes
 
-List properties under **Checkbox filters** and a collapsible **Filters** panel appears above the cards. Each property gets a column with one checkbox per distinct value and a count beside it. Uncheck a value to hide the cards that have it; **All** and **None** flip a whole column.
+The card view and the table view share this. List properties under **Checkbox filters** and a collapsible **Filters** panel appears above the cards. Each property gets a column with one checkbox per distinct value and a count beside it. Uncheck a value to hide the cards that have it; **All** and **None** flip a whole column.
 
 - With several properties, a card must pass all of them to stay visible.
 - A list property such as tags contributes each item, so a card tagged `a, b` stays visible while either is checked. A card with no value counts as `—`.
 - Names match case-insensitively, and a full id (`note.status`) or the display name shown in the base also works. A name that matches nothing is reported in red at the top of the panel instead of being dropped.
-- Counts cover every card, not just the visible ones, so an unchecked value still says how many cards it hides.
+- Counts update as you check and uncheck. Each is how many cards (or rows) that value would show given every other filter and the group checkboxes, so an unchecked value still says how many it would bring back. A value that no remaining card has stays listed, dimmed, at 0.
+- The panel's title line shows the total, `Filters · 456 total` or `Filters · 120 of 456 shown`, and stays visible when the panel is collapsed.
 - If the view is grouped, the panel also gets a **Group** column that hides whole groups.
 - Unchecked values are saved in the `.base` file, so they survive a reload.
 
-This filters rather than groups: the cards stay in the view's own grouping and sort order.
+This filters rather than groups: the cards (or rows) stay in the view's own grouping and sort order.
 
 ## Hidden properties
 
@@ -125,6 +126,50 @@ List a property under **Properties to expose as card classes** and every card ga
 ```
 
 Only listed properties produce classes — every property on every card would otherwise be a lot of markup for nothing.
+
+## Table view
+
+**Flex table** is a second view type, for when you want rows instead of cards. It shows the view's properties as columns, one row per note, and takes its grouping and sort order from the base like any other view.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| Checkbox filters | — | As on cards: a column of checkboxes per property, above the table |
+| Show filter checkboxes | on | Turn the whole checkbox panel off without clearing the list |
+| Lines per cell | 3 | Default clamp for a cell's text |
+| Per-property lines | — | One `property: lines` per row, as on cards |
+| Properties to expose as cell classes | — | One property name per row. Each of those columns' cells gains classes from its own value — see below |
+
+- Groups appear as banner rows inside one table, not as separate tables, so columns stay aligned across groups. The **Group** checkbox column hides whole groups, as on cards.
+- The header row stays at the top while you scroll.
+- Drag the right edge of a header to resize that column. The first drag pins every column at its current width and makes the table as wide as its columns, so the pane scrolls sideways if they add up to more than fits. Widths are saved in the `.base` file under `columnSize`, the same key and format the built-in table uses, so they survive a reload and carry over if you switch the view to the built-in table. Double-click a header edge to clear them and go back to fitting the pane.
+- A `file.name` column opens that row's note on click (Cmd or Ctrl for a new tab), with hover preview.
+- Like the cards, rows render 60 at a time as you scroll.
+
+### Styling a cell by its value
+
+List a property under **Properties to expose as cell classes** and each cell in that column gains classes from the cell's own value, using the same rule as card classes: a truthy value gives `fc-<property>`, the value gives `fc-<property>-<value>`, and a list contributes one class per item. A `Status` cell holding "Done" becomes `td.fc-status.fc-status-done`.
+
+```css
+.flex-table td.fc-status-done {
+  color: var(--color-green);
+}
+
+.flex-table td.fc-status-blocked {
+  background: color-mix(in srgb, var(--color-red) 15%, transparent);
+}
+```
+
+To style a whole row from one column's value, use `:has()`:
+
+```css
+.flex-table tr:has(> .fc-status-done) {
+  opacity: 0.6;
+}
+```
+
+Every cell carries `data-property`, as card properties do, and the classes on the table are `.flex-table`, `.flex-table-cell`, `.flex-table-group-row`, and `.flex-cards-value` (the cell's content, which holds the line clamp).
+
+The table has no themes, labels, hidden properties, or editing; for in-place editing, use the built-in table or the card view.
 
 ## Notes
 

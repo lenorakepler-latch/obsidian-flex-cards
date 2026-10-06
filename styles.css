@@ -284,6 +284,10 @@
   cursor: pointer;
 }
 
+.flex-cards-filter-item.is-empty {
+  opacity: 0.5;
+}
+
 .flex-cards-filter-count {
   margin-left: auto;
   color: var(--text-faint);
@@ -298,4 +302,84 @@
 /* Hidden properties stay in the card's DOM; `hidden` already does this, but a theme setting `display` on the value class must not bring them back. */
 .flex-cards-hidden {
   display: none !important;
+}
+
+/* ---- Table ----------------------------------------------------------- */
+
+/* Borders and backgrounds follow Obsidian's own Bases table variables, so the table matches the built-in one under any theme; the fallbacks apply where a theme does not define them. */
+.flex-table {
+  --fc-table-border: 1px solid var(--bases-table-border-color, var(--background-modifier-border));
+  --fc-table-bg: var(--background-primary);
+
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--fc-table-bg);
+}
+
+.flex-table th,
+.flex-table td {
+  border: var(--fc-table-border);
+  padding: var(--size-4-1) var(--size-4-2);
+}
+
+.flex-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bases-table-header-background, var(--fc-table-bg));
+  text-align: left;
+  font-family: var(--fc-label-font);
+  font-size: var(--fc-label-size);
+  font-weight: var(--font-semibold);
+  color: var(--fc-label-color);
+  text-transform: var(--fc-label-transform);
+  letter-spacing: 0.04em;
+}
+
+.flex-table td {
+  vertical-align: top;
+  background: var(--fc-table-bg);
+}
+
+.flex-table td.flex-cards-group {
+  padding-top: var(--size-4-3);
+  background: var(--bases-table-group-background, var(--fc-table-bg));
+}
+
+.flex-table tbody tr:not(.flex-table-group-row):hover td {
+  background: var(--bases-table-row-background-hover, var(--background-modifier-hover));
+}
+
+/* Column resizing. The grip sits on the header's right edge; once any column has been dragged the table switches to a fixed layout, as wide as its columns, and the pane scrolls sideways if need be. */
+.flex-cards-table {
+  overflow-x: auto;
+}
+
+.flex-table-grip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.flex-table-grip:hover,
+.flex-table.is-resizing .flex-table-grip {
+  background: var(--interactive-accent);
+}
+
+.flex-table.is-resized {
+  table-layout: fixed;
+  max-width: none;
+}
+
+.flex-table.is-resized td {
+  overflow-wrap: anywhere;
+}
+
+.flex-table.is-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
