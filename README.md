@@ -60,7 +60,7 @@ The variables are `--fc-gap`, `--fc-card-{bg,border,radius,pad,shadow,accent}`, 
 
 Obsidian's table view lets you edit a property in place; its card view does not, and the property editors core uses in table cells are not part of the public API. The write path is, though — so the controls here are this plugin's own, and deliberately cover only the two cases worth doing without a widget toolkit.
 
-List a property under **Editable properties**:
+The table view has the same **Editable properties** option and the same controls in its cells. List a property under **Editable properties**:
 
 ```
 Will Apply: check
@@ -71,7 +71,7 @@ Priority Score: number
 
 A checkbox is live — click it and the frontmatter is written. Text and numbers are click-to-edit: the value renders normally until you click it, then becomes a box. Enter saves, Shift+Enter adds a line, Escape cancels, and clicking away saves.
 
-Without an explicit type the control is inferred from the value already in the file — a boolean gets a checkbox, a number a number box, anything else a text box. Give the type explicitly for a property that is often missing, since an absent value has nothing to infer from and would otherwise get a text box.
+A row of `*` makes every `note.` property editable, with the type inferred; that is the closest to the built-in table, where every cell is editable. Without an explicit type the control is inferred from the value already in the file — a boolean gets a checkbox, a number a number box, anything else a text box. Give the type explicitly for a property that is often missing, since an absent value has nothing to infer from and would otherwise get a text box.
 
 Details worth knowing:
 
@@ -135,12 +135,15 @@ Only listed properties produce classes — every property on every card would ot
 | --- | --- | --- |
 | Checkbox filters | — | As on cards: a column of checkboxes per property, above the table |
 | Show filter checkboxes | on | Turn the whole checkbox panel off without clearing the list |
+| Frozen column | first column | The column that stays at the left while the table scrolls sideways. Choosing another moves it to the front of the table; the order saved in the base is not changed, and clearing the option puts it back |
 | Lines per cell | 3 | Default clamp for a cell's text |
 | Per-property lines | — | One `property: lines` per row, as on cards |
 | Properties to expose as cell classes | — | One property name per row. Each of those columns' cells gains classes from its own value — see below |
+| Editable properties | — | One property name per row, optionally `: check`, `: text`, or `: number`; `*` makes every note property editable. Those cells become click-to-edit, as on cards — see [Editing from a card](#editing-from-a-card) |
 
 - Groups appear as banner rows inside one table, not as separate tables, so columns stay aligned across groups. The **Group** checkbox column hides whole groups, as on cards.
 - The header row stays at the top, and the first column at the left, while you scroll. The table scrolls inside its own box, at most 85% of the window height; set `--fc-table-max-height` to change that.
+- Drag a header's name to move that column; a bar shows where it will land (left half of a header puts it before, right half after). The new order is saved with the view, the same way the built-in table saves it, and it is the same order the cards use for their properties.
 - Drag the right edge of a header to resize that column. The first drag pins every column at its current width and makes the table as wide as its columns, so the pane scrolls sideways if they add up to more than fits. Widths are saved in the `.base` file under `columnSize`, the same key and format the built-in table uses, so they survive a reload and carry over if you switch the view to the built-in table. Double-click a header edge to clear them and go back to fitting the pane.
 - A `file.name` column opens that row's note on click (Cmd or Ctrl for a new tab), with hover preview.
 - Like the cards, rows render 60 at a time as you scroll.
@@ -169,7 +172,7 @@ To style a whole row from one column's value, use `:has()`:
 
 Every cell carries `data-property`, as card properties do, and the classes on the table are `.flex-table`, `.flex-table-cell`, `.flex-table-group-row`, and `.flex-cards-value` (the cell's content, which holds the line clamp).
 
-The table has no themes, labels, hidden properties, or editing; for in-place editing, use the built-in table or the card view.
+The table has no themes, labels, or hidden properties.
 
 ## Notes
 

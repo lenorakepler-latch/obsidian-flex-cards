@@ -292,6 +292,83 @@ class FlexBaseView extends obsidian.BasesView {
 		if (value) value.renderTo(el, this.app.renderContext);
 	}
 
+	/* The editor an `id` gets: undefined when it is not editable, null when the type is to be inferred from the value. A `*` row makes every note property editable. */
+	editorFor(id) {
+		if (!id.startsWith('note.')) return undefined;
+		const { editable } = this.settings;
+		const name = id.slice('note.'.length).toLowerCase();
+		return name in editable ? editable[name] : editable['*'];
+	}
+
+	frontmatterOf(file) {
+		return this.app.metadataCache.getFileCache(file)?.frontmatter || {};
+	}
+
+	/* Editing goes through `processFrontMatter`, the only public write path — the property editors core uses in table cells are not exported, so the controls here are our own. */
+	async setProperty(file, name, value) {
+		await this.app.fileManager.processFrontMatter(file, (fm) => {
+			fm[name] = value;
+		});
+	}
+
+	renderEditable(el, entry, id, declaredType) {
+		const fm = this.frontmatterOf(entry.file);
+		const name = frontmatterKey(fm, id.slice('note.'.length));
+		const raw = fm[name];
+
+		// A list needs a real multi-value control; until there is one, show it rather than let a text box flatten it to a string.
+		if (Array.isArray(raw)) return this.renderValue(el, entry, id);
+
+		const type = declaredType || (typeof raw === 'boolean' ? 'check' : typeof raw === 'number' ? 'number' : 'text');
+		el.addClass('is-editable');
+
+		if (type === 'check') {
+			const box = el.createEl('input', { type: 'checkbox' });
+			box.checked = raw === true;
+			box.addEventListener('click', (evt) => evt.stopPropagation());
+			box.addEventListener('change', () => this.setProperty(entry.file, name, box.checked));
+			return;
+		}
+
+		this.renderValue(el, entry, id);
+		el.addEventListener('click', (evt) => {
+			if (evt.target.closest('a') || el.hasClass('is-editing')) return;
+			this.openEditor(el, entry, id, name, raw, type);
+		});
+	}
+
+	openEditor(el, entry, id, name, raw, type) {
+		el.addClass('is-editing');
+		el.empty();
+		const input = type === 'number'
+			? el.createEl('input', { type: 'number', value: raw ?? '' })
+			: el.createEl('textarea', { text: raw ?? '' });
+
+		let done = false;
+		const close = async (save) => {
+			if (done) return;
+			done = true;
+			const text = input.value;
+			el.removeClass('is-editing');
+			el.empty();
+			if (save && type === 'number' && text.trim() !== '' && !Number.isNaN(Number(text))) {
+				await this.setProperty(entry.file, name, Number(text));
+			} else if (save && type !== 'number' && text !== String(raw ?? '')) {
+				await this.setProperty(entry.file, name, text);
+			}
+			// A save triggers a re-render of the whole view; a cancel does not, so repaint the cell.
+			if (el.isConnected && !el.hasChildNodes()) this.renderValue(el, entry, id);
+		};
+
+		input.addEventListener('blur', () => close(true));
+		input.addEventListener('keydown', (evt) => {
+			if (evt.key === 'Escape') { evt.preventDefault(); close(false); }
+			if (evt.key === 'Enter' && !evt.shiftKey) { evt.preventDefault(); close(true); }
+		});
+		input.focus();
+		input.select();
+	}
+
 	/* Open an entry's own note from `el`, whatever property it renders. A rendered value may already contain links of its own — a `link()` formula, or a property holding a wikilink — and those may point somewhere else entirely, so a click or hover that lands on one is left to it. */
 	linkToNote(el, file) {
 		if (!file) return;
@@ -431,7 +508,7 @@ class FlexCardsView extends FlexBaseView {
 		for (const id of props) {
 			const value = entry.getValue(id);
 			// `null` means "infer the type", so test for presence, not truthiness.
-			const editor = id.startsWith('note.') ? this.settings.editable[id.slice(5).toLowerCase()] : undefined;
+			const editor = this.editorFor(id);
 			const editable = editor !== undefined;
 			// An editable property has to survive `hideEmpty`, or a field that is missing is a field you can never set.
 			if (!editable && hideEmpty && (value === null || value.toString() === '')) continue;
@@ -478,75 +555,6 @@ class FlexCardsView extends FlexBaseView {
 		img.src = src;
 		img.loading = 'lazy';
 	}
-
-	frontmatterOf(file) {
-		return this.app.metadataCache.getFileCache(file)?.frontmatter || {};
-	}
-
-	/* Editing goes through `processFrontMatter`, the only public write path — the property editors core uses in table cells are not exported, so the controls here are our own. */
-	async setProperty(file, name, value) {
-		await this.app.fileManager.processFrontMatter(file, (fm) => {
-			fm[name] = value;
-		});
-	}
-
-	renderEditable(el, entry, id, declaredType) {
-		const fm = this.frontmatterOf(entry.file);
-		const name = frontmatterKey(fm, id.slice('note.'.length));
-		const raw = fm[name];
-
-		// A list needs a real multi-value control; until there is one, show it rather than let a text box flatten it to a string.
-		if (Array.isArray(raw)) return this.renderValue(el, entry, id);
-
-		const type = declaredType || (typeof raw === 'boolean' ? 'check' : typeof raw === 'number' ? 'number' : 'text');
-		el.addClass('is-editable');
-
-		if (type === 'check') {
-			const box = el.createEl('input', { type: 'checkbox' });
-			box.checked = raw === true;
-			box.addEventListener('click', (evt) => evt.stopPropagation());
-			box.addEventListener('change', () => this.setProperty(entry.file, name, box.checked));
-			return;
-		}
-
-		this.renderValue(el, entry, id);
-		el.addEventListener('click', (evt) => {
-			if (evt.target.closest('a') || el.hasClass('is-editing')) return;
-			this.openEditor(el, entry, id, name, raw, type);
-		});
-	}
-
-	openEditor(el, entry, id, name, raw, type) {
-		el.addClass('is-editing');
-		el.empty();
-		const input = type === 'number'
-			? el.createEl('input', { type: 'number', value: raw ?? '' })
-			: el.createEl('textarea', { text: raw ?? '' });
-
-		let done = false;
-		const close = async (save) => {
-			if (done) return;
-			done = true;
-			const text = input.value;
-			el.removeClass('is-editing');
-			el.empty();
-			if (save && type === 'number' && text.trim() !== '' && !Number.isNaN(Number(text))) {
-				await this.setProperty(entry.file, name, Number(text));
-			} else if (save && type !== 'number' && text !== String(raw ?? '')) {
-				await this.setProperty(entry.file, name, text);
-			}
-			// A save triggers a re-render of the whole view; a cancel does not, so repaint the cell.
-			if (el.isConnected && !el.hasChildNodes()) this.renderValue(el, entry, id);
-		};
-
-		input.addEventListener('blur', () => close(true));
-		input.addEventListener('keydown', (evt) => {
-			if (evt.key === 'Escape') { evt.preventDefault(); close(false); }
-			if (evt.key === 'Enter' && !evt.shiftKey) { evt.preventDefault(); close(true); }
-		});
-		input.focus();
-		input.select();
-	}
 }
 
 /* A table of the view's properties, one row per note. Groups become banner rows inside one table rather than separate tables, so the columns line up across groups. Each cell holds its value in a `flex-cards-value`, so the same per-property line clamp applies as on a card.
@@ -555,6 +563,7 @@ class FlexCardsView extends FlexBaseView {
 class FlexTableView extends FlexBaseView {
 	constructor(controller, containerEl) {
 		super(controller, containerEl, TABLE_VIEW_TYPE);
+		this.dragFrom = null;
 	}
 
 	onDataUpdated() {
@@ -566,13 +575,21 @@ class FlexTableView extends FlexBaseView {
 		this.rootEl.style.setProperty('--fc-lines', String(this.opt('lines', 3)));
 
 		this.settings = {
-			columns: this.config.getOrder(),
+			columns: this.frozenFirst(this.config.getOrder()),
 			clamps: parseClamps(this.opt('clamps', []), this.allProperties.concat(['file.name'])),
 			classProps: this.resolveNames(this.opt('cellClasses', [])),
 			widths: parseWidths(this.config.get(COLUMN_SIZE)),
+			editable: parseEditable(this.opt('editable', [])),
 		};
 
 		this.drawGroups(this.readHidden());
+	}
+
+	/* The first column is the frozen one (see the sticky rules in styles.css), so choosing another column to freeze moves it to the front. This is display only: the saved order is not rewritten, and clearing the option puts the column back where the base has it. A column that is not in the view is ignored. */
+	frozenFirst(order) {
+		const id = this.config.getAsPropertyId('freezeColumn');
+		if (!id || !order.includes(id)) return order;
+		return [id, ...order.filter((column) => column !== id)];
 	}
 
 	beginDraw() {
@@ -582,8 +599,9 @@ class FlexTableView extends FlexBaseView {
 		this.cols = columns.map(() => group.createEl('col'));
 		const row = this.table.createEl('thead').createEl('tr');
 		columns.forEach((id, i) => {
-			const th = row.createEl('th', { text: this.config.getDisplayName(id) });
+			const th = row.createEl('th');
 			th.dataset.property = id;
+			this.makeDraggable(th.createDiv({ cls: 'flex-table-label', text: this.config.getDisplayName(id) }), th, id, i);
 			const grip = th.createDiv({ cls: 'flex-table-grip' });
 			grip.addEventListener('pointerdown', (evt) => this.startResize(evt, grip, i));
 			grip.addEventListener('dblclick', () => this.resetWidths());
@@ -594,6 +612,60 @@ class FlexTableView extends FlexBaseView {
 			this.table.addClass('is-resized');
 			this.syncTableWidth();
 		}
+	}
+
+	/* Dragging the header's label moves the column. Only the label is draggable, not the whole header, so the resize grip on its edge is not mistaken for a column drag. Dropping on the left half of a header puts the column before it, the right half after. */
+	makeDraggable(label, th, id, i) {
+		label.draggable = true;
+		label.addEventListener('dragstart', (evt) => {
+			this.dragFrom = i;
+			evt.dataTransfer.effectAllowed = 'move';
+			evt.dataTransfer.setData('text/plain', id);
+		});
+		label.addEventListener('dragend', () => {
+			this.dragFrom = null;
+			this.clearDropMarks();
+		});
+		th.addEventListener('dragover', (evt) => {
+			if (this.dragFrom === null) return;
+			evt.preventDefault();
+			evt.dataTransfer.dropEffect = 'move';
+			this.clearDropMarks();
+			th.addClass(this.dropsBefore(evt, th) ? 'drop-before' : 'drop-after');
+		});
+		th.addEventListener('drop', (evt) => {
+			if (this.dragFrom === null) return;
+			evt.preventDefault();
+			const from = this.dragFrom;
+			this.dragFrom = null;
+			this.moveColumn(from, i + (this.dropsBefore(evt, th) ? 0 : 1));
+		});
+	}
+
+	dropsBefore(evt, th) {
+		const box = th.getBoundingClientRect();
+		return evt.clientX < box.left + box.width / 2;
+	}
+
+	clearDropMarks() {
+		for (const th of this.table.querySelectorAll('th')) {
+			th.removeClass('drop-before');
+			th.removeClass('drop-after');
+		}
+	}
+
+	/* `before` is the slot the column is dropped into, counted before it is lifted out. The new order is saved with `setOrder`, which is what the built-in table calls, and the table is redrawn from it at once rather than waiting for the base to report back. */
+	moveColumn(from, before) {
+		const at = before > from ? before - 1 : before;
+		if (at === from) return;
+		const { columns } = this.settings;
+		const slots = columns.map((_, i) => i);
+		slots.splice(at, 0, ...slots.splice(from, 1));
+		const next = slots.map((i) => columns[i]);
+		this.settings.columns = next;
+		if (typeof this.config.setOrder === 'function') this.config.setOrder(next);
+		else this.config.set('order', next);
+		this.drawGroups(this.readHidden());
 	}
 
 	colWidth(i) {
@@ -676,7 +748,9 @@ class FlexTableView extends FlexBaseView {
 			td.dataset.property = id;
 			if (id in clamps) td.style.setProperty('--fc-lines', String(clamps[id]));
 			const cell = td.createDiv({ cls: 'flex-cards-value' });
-			this.renderValue(cell, entry, id);
+			const editor = this.editorFor(id);
+			if (editor !== undefined) this.renderEditable(cell, entry, id, editor);
+			else this.renderValue(cell, entry, id);
 			// The file name is the one column that is always a note, so it opens that note like a card title does.
 			if (id === 'file.name') this.linkToNote(cell, entry.file);
 		}
@@ -788,6 +862,7 @@ module.exports = class FlexCardsPlugin extends obsidian.Plugin {
 			factory: (controller, containerEl) => new FlexTableView(controller, containerEl),
 			options: () => [
 				...filterOptions(),
+				{ type: 'property', key: 'freezeColumn', displayName: 'Frozen column', placeholder: 'First column' },
 				{
 					type: 'group',
 					displayName: 'Text',
@@ -809,6 +884,12 @@ module.exports = class FlexCardsPlugin extends obsidian.Plugin {
 							type: 'multitext',
 							key: 'cellClasses',
 							displayName: 'Properties to expose as cell classes',
+							placeholder: 'Status',
+						},
+						{
+							type: 'multitext',
+							key: 'editable',
+							displayName: 'Editable properties (* for all)',
 							placeholder: 'Status',
 						},
 					],
