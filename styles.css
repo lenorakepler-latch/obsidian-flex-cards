@@ -30,10 +30,6 @@
   --fc-leading: var(--line-height-tight);
   --fc-prop-gap: var(--size-4-2);
   --fc-prop-rule: none;
-
-  height: 100%;
-  overflow-y: auto;
-  padding: var(--size-4-3);
 }
 
 .flex-cards-group {
@@ -72,7 +68,6 @@
   border-radius: var(--fc-card-radius);
   padding: var(--fc-card-pad);
   box-shadow: var(--fc-card-shadow);
-  max-height: var(--fc-max-height);
   overflow-y: auto;
 }
 
@@ -387,8 +382,7 @@
 /* Column resizing. The grip sits on the header's right edge; once any column has been dragged the table switches to a fixed layout, as wide as its columns, and the pane scrolls sideways if need be. */
 /* The table is its own scroll container (overflow-x: auto), so the sticky header and first column only work if it is height-limited and scrolls vertically as well. */
 .flex-cards-table {
-  overflow-x: auto;
-  max-height: var(--fc-table-max-height, 85vh);
+  max-height: 100%;
 }
 
 .flex-table-grip {
@@ -418,4 +412,21 @@
 .flex-table.is-resizing {
   cursor: col-resize;
   user-select: none;
+}
+
+/* Reordering and editing. The label fills the header so it can be dragged from anywhere but the grip; an empty editable cell still needs a line of height to be clicked. */
+.flex-table-label {
+  cursor: grab;
+}
+
+.flex-table th.drop-before {
+  box-shadow: inset 3px 0 0 var(--interactive-accent);
+}
+
+.flex-table th.drop-after {
+  box-shadow: inset -3px 0 0 var(--interactive-accent);
+}
+
+.flex-table .flex-cards-value.is-editable {
+  min-height: 1.4em;
 }
