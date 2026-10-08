@@ -350,9 +350,45 @@
   background: var(--bases-table-row-background-hover, var(--background-modifier-hover));
 }
 
+/* Frozen first column. Cells already have opaque backgrounds, so scrolled content does not show through. */
+.flex-table tbody tr:not(.flex-table-group-row) > td:first-child,
+.flex-table thead th:first-child {
+  position: sticky;
+  left: 0;
+}
+
+.flex-table tbody td:first-child {
+  z-index: 1;
+}
+
+/* Above both the sticky header and the frozen cells. */
+.flex-table thead th:first-child {
+  z-index: 2;
+}
+
+/* The hover colour is semi-transparent; layer it over the table background so the frozen cell stays solid. */
+.flex-table tbody tr:not(.flex-table-group-row):hover > td:first-child {
+  --fc-hover: var(--bases-table-row-background-hover, var(--background-modifier-hover));
+  background: linear-gradient(var(--fc-hover), var(--fc-hover)), var(--fc-table-bg);
+}
+
+/* border-collapse keeps borders on the table grid, so a sticky cell leaves its right border behind when scrolled; draw it on the cell instead. */
+.flex-table tbody tr:not(.flex-table-group-row) > td:first-child::after,
+.flex-table thead th:first-child::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--bases-table-border-color, var(--background-modifier-border));
+}
+
 /* Column resizing. The grip sits on the header's right edge; once any column has been dragged the table switches to a fixed layout, as wide as its columns, and the pane scrolls sideways if need be. */
+/* The table is its own scroll container (overflow-x: auto), so the sticky header and first column only work if it is height-limited and scrolls vertically as well. */
 .flex-cards-table {
   overflow-x: auto;
+  max-height: var(--fc-table-max-height, 85vh);
 }
 
 .flex-table-grip {

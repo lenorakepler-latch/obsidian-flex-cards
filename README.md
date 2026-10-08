@@ -140,7 +140,7 @@ Only listed properties produce classes — every property on every card would ot
 | Properties to expose as cell classes | — | One property name per row. Each of those columns' cells gains classes from its own value — see below |
 
 - Groups appear as banner rows inside one table, not as separate tables, so columns stay aligned across groups. The **Group** checkbox column hides whole groups, as on cards.
-- The header row stays at the top while you scroll.
+- The header row stays at the top, and the first column at the left, while you scroll. The table scrolls inside its own box, at most 85% of the window height; set `--fc-table-max-height` to change that.
 - Drag the right edge of a header to resize that column. The first drag pins every column at its current width and makes the table as wide as its columns, so the pane scrolls sideways if they add up to more than fits. Widths are saved in the `.base` file under `columnSize`, the same key and format the built-in table uses, so they survive a reload and carry over if you switch the view to the built-in table. Double-click a header edge to clear them and go back to fitting the pane.
 - A `file.name` column opens that row's note on click (Cmd or Ctrl for a new tab), with hover preview.
 - Like the cards, rows render 60 at a time as you scroll.
